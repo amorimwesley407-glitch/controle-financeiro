@@ -26,11 +26,21 @@ export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: productionAuthOrigin || vercelOrigins[0] || 'http://localhost:3000',
   trustedOrigins: [
-    'http://localhost:3000',
+    ...(process.env.NODE_ENV === 'development' ? ['http://localhost:3000'] : []),
     ...(configuredAuthOrigin ? [configuredAuthOrigin] : []),
     ...vercelOrigins,
   ],
-  emailAndPassword: { enabled: true, autoSignIn: true },
+  emailAndPassword: { enabled: true, autoSignIn: true, minPasswordLength: 12, maxPasswordLength: 128 },
+  rateLimit: {
+    enabled: true,
+    storage: 'database',
+    window: 60,
+    max: 60,
+    customRules: {
+      '/sign-in/email': { window: 60, max: 5 },
+      '/sign-up/email': { window: 60 * 60, max: 3 },
+    },
+  },
   user: {
     deleteUser: {
       enabled: true,

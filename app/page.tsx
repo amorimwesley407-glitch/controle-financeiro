@@ -6,6 +6,7 @@ import { db } from '@/lib/db'
 import { budgets, categories, goals, holdings, transactions } from '@/lib/db/schema'
 import { FinanceDashboard } from '@/components/finance-dashboard'
 import { z } from 'zod'
+import { signImageUrls } from '@/lib/storage'
 
 async function getQuotes(){
   const fallback=[{symbol:'USD',name:'Dólar comercial',value:5.47,change:0.18,kind:'currency'},{symbol:'BTC',name:'Bitcoin',value:675420,change:1.24,kind:'crypto'},{symbol:'EUR',name:'Euro',value:6.38,change:-0.11,kind:'currency'}]
@@ -63,8 +64,10 @@ async function getUserCategories(userId:string){
 export default async function Page(){
  const current=await auth.api.getSession({headers:await headers()});if(!current?.user)redirect('/sign-in');const userId=current.user.id
  const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())
- const [tx,cats,userGoals,userBudgets,userHoldings,quotes,stockQuotes,selic]=await Promise.all([db.select().from(transactions).where(eq(transactions.userId,userId)).orderBy(desc(transactions.date)),getUserCategories(userId),db.select().from(goals).where(eq(goals.userId,userId)),db.select().from(budgets).where(eq(budgets.userId,userId)),db.select().from(holdings).where(eq(holdings.userId,userId)),getQuotes(),getStockQuotes(),getSelic()])
+ const [tx,rawCats,userGoals,userBudgets,userHoldings,quotes,stockQuotes,selic]=await Promise.all([db.select().from(transactions).where(eq(transactions.userId,userId)).orderBy(desc(transactions.date)),getUserCategories(userId),db.select().from(goals).where(eq(goals.userId,userId)),db.select().from(budgets).where(eq(budgets.userId,userId)),db.select().from(holdings).where(eq(holdings.userId,userId)),getQuotes(),getStockQuotes(),getSelic()])
+ const imageUrls=await signImageUrls([current.user.image,...rawCats.map(item=>item.imagePath),...tx.map(item=>item.imagePath)])
+ const cats=rawCats.map(item=>({...item,imagePath:item.imagePath?imageUrls.get(item.imagePath)??null:null}))
  const marketIndicators=selic?[...quotes,{symbol:'SELIC',name:'Meta Selic',value:selic.value,change:0,kind:'rate'}]:quotes
- const enrichedTransactions=tx.map(item=>{const category=cats.find(entry=>entry.id===item.categoryId);return {...item,categoryName:category?.name,categoryIcon:category?.icon,categoryImage:category?.imagePath}})
- return <FinanceDashboard currentDate={today} user={{name:current.user.name,email:current.user.email,image:current.user.image??null}} transactions={enrichedTransactions} categories={cats} goals={userGoals} budgets={userBudgets} holdings={userHoldings} quotes={marketIndicators} stockQuotes={stockQuotes}/>
+ const enrichedTransactions=tx.map(item=>{const category=cats.find(entry=>entry.id===item.categoryId);return {...item,imagePath:item.imagePath?imageUrls.get(item.imagePath)??null:null,categoryName:category?.name,categoryIcon:category?.icon,categoryImage:category?.imagePath}})
+ return <FinanceDashboard currentDate={today} user={{name:current.user.name,email:current.user.email,image:current.user.image?imageUrls.get(current.user.image)??null:null}} transactions={enrichedTransactions} categories={cats} goals={userGoals} budgets={userBudgets} holdings={userHoldings} quotes={marketIndicators} stockQuotes={stockQuotes}/>
 }

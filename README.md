@@ -72,7 +72,7 @@ Se a senha do banco contiver caracteres especiais, codifique-os na URL. Por exem
 npm run db:migrate
 ```
 
-A migração em [`lib/db/migration.sql`](lib/db/migration.sql) cria as tabelas, relacionamentos, índices e o bucket público `finance-uploads`. Ela é idempotente e pode ser executada novamente com segurança.
+A migração em [`lib/db/migration.sql`](lib/db/migration.sql) cria as tabelas, relacionamentos, índices e o bucket privado `finance-uploads`. A aplicação fornece URLs temporárias somente para usuários autenticados. A migração é idempotente e pode ser executada novamente com segurança.
 
 ## Desenvolvimento local
 
@@ -153,7 +153,7 @@ Confira a senha do banco, o usuário `postgres.PROJECT_REF` e a URL do Transacti
 
 ### Imagens não aparecem
 
-Verifique `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, o nome do bucket e se o bucket `finance-uploads` está público.
+Verifique `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, o nome do bucket e se o bucket privado `finance-uploads` existe.
 
 ## Licença
 

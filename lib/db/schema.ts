@@ -1,4 +1,4 @@
-import { index, integer, pgTable, serial, text, timestamp, uniqueIndex, boolean } from 'drizzle-orm/pg-core'
+import { bigint, index, integer, pgTable, serial, text, timestamp, uniqueIndex, boolean } from 'drizzle-orm/pg-core'
 
 const timestamps = {
   createdAt: timestamp('createdAt', { withTimezone: true }).notNull().defaultNow(),
@@ -20,6 +20,9 @@ export const account = pgTable('account', {
 })
 export const verification = pgTable('verification', {
   id: text('id').primaryKey(), identifier: text('identifier').notNull(), value: text('value').notNull(), expiresAt: timestamp('expiresAt', { withTimezone: true }).notNull(), ...timestamps,
+})
+export const rateLimit = pgTable('rateLimit', {
+  id: text('id').primaryKey(), key: text('key').notNull().unique(), count: integer('count').notNull(), lastRequest: bigint('lastRequest', { mode: 'number' }).notNull(),
 })
 export const categories = pgTable('categories', {
   id: serial('id').primaryKey(), userId: text('userId').notNull().references(() => user.id, { onDelete: 'cascade' }), name: text('name').notNull(), type: text('type').notNull(),

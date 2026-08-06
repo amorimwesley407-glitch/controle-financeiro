@@ -31,7 +31,6 @@ import {
   CreditCard,
   Download,
   Dumbbell,
-  FileSpreadsheet,
   Gamepad2,
   Gift,
   GraduationCap,
@@ -4261,43 +4260,31 @@ function TransactionTable({
     URL.revokeObjectURL(url);
     toast.success("Arquivo CSV exportado.");
   }
-  async function exportExcel() {
-    const XLSX = await import("xlsx");
-    const data = rows.map((t) => ({
-      Descrição: t.description,
-      Data: t.date,
-      Tipo: t.type === "income" ? "Receita" : "Despesa",
-      Valor: t.amountCents / 100,
-      Categoria:
-        categories.find((c) => c.id === t.categoryId)?.name ??
-        t.categoryName ??
-        "",
-    }));
-    const book = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(
-      book,
-      XLSX.utils.json_to_sheet(data),
-      "Transações",
-    );
-    XLSX.writeFile(
-      book,
-      `clareza-transacoes-${new Date().toISOString().slice(0, 10)}.xlsx`,
-    );
-  }
   async function importFile(file: File) {
     setImporting(true);
     try {
-      const XLSX = await import("xlsx");
-      const book = XLSX.read(await file.arrayBuffer(), {
-        type: "array",
-        cellDates: true,
-        raw: true,
-      });
-      const sheet = book.Sheets[book.SheetNames[0]];
-      if (!sheet) throw new Error("A planilha está vazia");
-      const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-        defval: "",
-      });
+      if (file.size > 2 * 1024 * 1024) throw new Error("O CSV deve ter no máximo 2 MB");
+      const csv = repairImportedText(await file.text()).replace(/^\uFEFF/, "");
+      const firstLine = csv.split(/\r?\n/, 1)[0] ?? "";
+      const delimiter = (firstLine.match(/;/g)?.length ?? 0) >= (firstLine.match(/,/g)?.length ?? 0) ? ";" : ",";
+      const records: string[][] = [];
+      let record: string[] = [], field = "", quoted = false;
+      for (let index = 0; index < csv.length; index++) {
+        const char = csv[index];
+        if (char === '"') {
+          if (quoted && csv[index + 1] === '"') { field += '"'; index++; }
+          else quoted = !quoted;
+        } else if (char === delimiter && !quoted) { record.push(field); field = ""; }
+        else if ((char === "\n" || char === "\r") && !quoted) {
+          if (char === "\r" && csv[index + 1] === "\n") index++;
+          record.push(field); if (record.some(value => value.trim())) records.push(record);
+          record = []; field = "";
+        } else field += char;
+      }
+      record.push(field); if (record.some(value => value.trim())) records.push(record);
+      if (records.length < 2) throw new Error("O arquivo CSV está vazio");
+      const headers = records[0];
+      const raw = records.slice(1).map(values => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])));
       const key = (value: string) =>
         repairImportedText(value)
           .replace(/^\uFEFF/, "")
@@ -4328,10 +4315,7 @@ function TransactionTable({
               ? "expense"
               : null;
         const rawDate = value(row, ["data", "date"]);
-        const date =
-          rawDate instanceof Date
-            ? rawDate.toISOString().slice(0, 10)
-            : String(rawDate).trim().split("/").reverse().join("-");
+        const date = String(rawDate).trim().split("/").reverse().join("-");
         const rawAmount = String(value(row, ["valor", "amount"])).replace(
           /[^\d,.-]/g,
           "",
@@ -4394,7 +4378,7 @@ function TransactionTable({
               <input
                 ref={importInput}
                 type="file"
-                accept=".csv,.xlsx,.xls"
+                accept=".csv,text/csv"
                 className="hidden"
                 onChange={(event) => {
                   const file = event.target.files?.[0];
@@ -4409,7 +4393,7 @@ function TransactionTable({
                 disabled={importing}
               >
                 <Upload data-icon="inline-start" />
-                {importing ? "Importando…" : "Importar CSV/Excel"}
+                {importing ? "Importando…" : "Importar CSV"}
               </Button>
               <Button
                 type="button"
@@ -4420,16 +4404,6 @@ function TransactionTable({
               >
                 <Download data-icon="inline-start" />
                 CSV
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void exportExcel()}
-                disabled={!rows.length}
-              >
-                <FileSpreadsheet data-icon="inline-start" />
-                Excel
               </Button>
             </div>
             <Button
