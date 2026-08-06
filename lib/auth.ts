@@ -5,13 +5,30 @@ import * as schema from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { removeImage } from '@/lib/storage'
 
+const toOrigin = (host: string | undefined) => {
+  if (!host) return null
+  return host.startsWith('http://') || host.startsWith('https://') ? host : `https://${host}`
+}
+
+const vercelOrigins = [
+  toOrigin(process.env.VERCEL_URL),
+  toOrigin(process.env.VERCEL_BRANCH_URL),
+  toOrigin(process.env.VERCEL_PROJECT_PRODUCTION_URL),
+].filter((origin): origin is string => Boolean(origin))
+
+const configuredAuthOrigin = toOrigin(process.env.BETTER_AUTH_URL)
+const productionAuthOrigin = configuredAuthOrigin?.includes('localhost')
+  ? vercelOrigins[0]
+  : configuredAuthOrigin
+
 export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: 'pg', schema }),
   secret: process.env.BETTER_AUTH_SECRET,
-  baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3000',
+  baseURL: productionAuthOrigin || vercelOrigins[0] || 'http://localhost:3000',
   trustedOrigins: [
     'http://localhost:3000',
-    ...(process.env.BETTER_AUTH_URL ? [process.env.BETTER_AUTH_URL] : []),
+    ...(configuredAuthOrigin ? [configuredAuthOrigin] : []),
+    ...vercelOrigins,
   ],
   emailAndPassword: { enabled: true, autoSignIn: true },
   user: {
