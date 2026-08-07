@@ -15,6 +15,7 @@ Aplicação web de controle financeiro pessoal construída com Next.js. Permite 
 - Tema claro e escuro
 - Upload de fotos, comprovantes e imagens para o Supabase Storage
 - Dashboard responsivo com gráficos e indicadores
+- Instalação como PWA no celular ou computador, com página offline segura
 
 ## Tecnologias
 
@@ -116,6 +117,12 @@ BETTER_AUTH_URL=https://seu-dominio.vercel.app
 5. Faça o deploy ou um redeploy depois de alterar variáveis.
 
 O Better Auth também reconhece automaticamente as URLs fornecidas pela Vercel para produção, previews e branches. Mesmo assim, `BETTER_AUTH_URL` deve apontar para o domínio definitivo usado pelos usuários.
+
+## Instalação como aplicativo (PWA)
+
+Depois do deploy HTTPS, navegadores compatíveis exibem o botão **Instalar Clareza**. Também é possível usar o menu do Chrome/Edge ou, no iPhone e iPad, **Compartilhar → Adicionar à Tela de Início**.
+
+O service worker armazena apenas o shell offline e arquivos estáticos versionados. Páginas autenticadas, respostas de API, sessões, dados financeiros e imagens privadas não são gravados no cache offline.
 
 ## Estrutura principal
 
