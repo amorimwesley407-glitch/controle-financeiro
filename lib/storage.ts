@@ -15,6 +15,9 @@ type StorageBucketClient = {
   remove: (paths: string[]) => Promise<{ error: StorageError }>
 }
 type StorageClient = { from: (bucketName: string) => StorageBucketClient }
+declare const preparedRemovalBrand: unique symbol
+export type PreparedImageRemoval = AuthorizedStorageReference & { readonly [preparedRemovalBrand]: true }
+const preparedRemovals = new WeakSet<object>()
 
 function storage() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -43,9 +46,11 @@ export async function uploadImage(file: File, userId: string, folder: StorageFol
   return `${storagePrefix}${objectPath}`
 }
 
-export function prepareImageRemovalForUser(userId: string, value: string | null | undefined) {
+export function prepareImageRemovalForUser(userId: string, value: string | null | undefined): PreparedImageRemoval | null {
   const reference = classifyStorageReference(value, userId, policyConfig())
-  return isAuthorizedStorageReference(reference) ? reference : null
+  if (!isAuthorizedStorageReference(reference)) return null
+  preparedRemovals.add(reference)
+  return reference as PreparedImageRemoval
 }
 
 export function createStorageAuthorizationOperations(getStorage: () => StorageClient = storage) {
@@ -69,18 +74,17 @@ export function createStorageAuthorizationOperations(getStorage: () => StorageCl
       return result
     },
 
-    async removePreparedImages(references: Array<AuthorizedStorageReference | null | undefined>) {
-      const paths = [...new Set(references.flatMap(reference => reference ? [reference.objectPath] : []))]
+    async removePreparedImages(references: Array<PreparedImageRemoval | null | undefined>) {
+      const authorized = references.filter((reference): reference is PreparedImageRemoval => Boolean(reference && preparedRemovals.has(reference)))
+      const paths = [...new Set(authorized.map(reference => reference.objectPath))]
       if (!paths.length) return
       const { error } = await getStorage().from(bucket).remove(paths)
       if (error) throw new Error(`Falha ao remover imagem: ${error.message}`)
+      authorized.forEach(reference => preparedRemovals.delete(reference))
     },
 
     async removeImagesForUser(userId: string, values: Array<string | null | undefined>) {
-      const references = values.map(value => {
-        const reference = classifyStorageReference(value, userId, policyConfig())
-        return isAuthorizedStorageReference(reference) ? reference : null
-      })
+      const references = values.map(value => prepareImageRemovalForUser(userId, value))
       await operations.removePreparedImages(references)
     },
   }

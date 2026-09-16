@@ -66,3 +66,22 @@ test('URL legada exige ausência de query, fragmento e encoding', () => {
     assert.equal(classifyStorageReference(value, 'A', config).kind, 'invalid')
   }
 })
+
+test('URL legada valida origem, credenciais, forma absoluta e quantidade de segmentos', () => {
+  const path = `/storage/v1/object/public/finance-uploads/A/profile-images/${uuid}.jpg`
+  const invalid = [
+    `https://project.supabase.co:444${path}`,
+    `https://user@project.supabase.co${path}`,
+    `https://user:password@project.supabase.co${path}`,
+    `https://project.supabase.co.evil.example${path}`,
+    path,
+    `https://project.supabase.co/storage/v1/object/public/finance-uploads/A/profile-images`,
+    `https://project.supabase.co${path}/extra`,
+  ]
+  for (const value of invalid) assert.equal(classifyStorageReference(value, 'A', config).kind, 'invalid', value)
+
+  assert.equal(
+    classifyStorageReference(`https://PROJECT.SUPABASE.CO${path}`, 'A', config).kind,
+    'legacy-supabase-public',
+  )
+})

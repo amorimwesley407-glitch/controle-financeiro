@@ -2,9 +2,8 @@ import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from '@better-auth/drizzle-adapter'
 import { db } from '@/lib/db'
 import * as schema from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
-import { removeImagesForUser } from '@/lib/storage'
 import { blockGenericAuthImageInput } from '@/lib/auth-image-policy'
+import { cleanupUserBeforeDelete } from '@/lib/account-deletion'
 
 const toOrigin = (host: string | undefined) => {
   if (!host) return null
@@ -48,22 +47,7 @@ export const auth = betterAuth({
   user: {
     deleteUser: {
       enabled: true,
-      beforeDelete: async (user) => {
-        const [userCategories, userTransactions] = await Promise.all([
-          db.select({ imagePath: schema.categories.imagePath }).from(schema.categories).where(eq(schema.categories.userId, user.id)),
-          db.select({ imagePath: schema.transactions.imagePath }).from(schema.transactions).where(eq(schema.transactions.userId, user.id)),
-        ])
-        await removeImagesForUser(user.id, [
-          ...userCategories.map((item) => item.imagePath),
-          ...userTransactions.map((item) => item.imagePath),
-          user.image,
-        ])
-        await db.delete(schema.transactions).where(eq(schema.transactions.userId, user.id))
-        await db.delete(schema.budgets).where(eq(schema.budgets.userId, user.id))
-        await db.delete(schema.goals).where(eq(schema.goals.userId, user.id))
-        await db.delete(schema.holdings).where(eq(schema.holdings.userId, user.id))
-        await db.delete(schema.categories).where(eq(schema.categories.userId, user.id))
-      },
+      beforeDelete: cleanupUserBeforeDelete,
     },
   },
   session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },

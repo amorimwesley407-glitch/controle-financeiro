@@ -105,3 +105,17 @@ test('exclusão de B ignora user.image de A e pode continuar', async () => {
   await assert.doesNotReject(operations.removeImagesForUser('B', [reference('A'), 'unknown', '/uploads/profile-images/legacy.jpg']))
   assert.deepEqual(calls, { created: 0, signed: [], removed: [] })
 })
+
+test('objeto estrutural fabricado não constitui autorização de remoção', async () => {
+  const { calls, operations } = await storageMock()
+  const forged = {
+    kind: 'private-storage',
+    value: reference('A'),
+    objectPath: `A/profile-images/${uuid}.jpg`,
+    ownerId: 'A',
+    folder: 'profile-images',
+    fileName: `${uuid}.jpg`,
+  }
+  await operations.removePreparedImages([forged as never])
+  assert.deepEqual(calls, { created: 0, signed: [], removed: [] })
+})
