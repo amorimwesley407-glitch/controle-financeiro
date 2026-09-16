@@ -3,7 +3,8 @@ import { drizzleAdapter } from '@better-auth/drizzle-adapter'
 import { db } from '@/lib/db'
 import * as schema from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { removeImage } from '@/lib/storage'
+import { removeImagesForUser } from '@/lib/storage'
+import { blockGenericAuthImageInput } from '@/lib/auth-image-policy'
 
 const toOrigin = (host: string | undefined) => {
   if (!host) return null
@@ -30,6 +31,9 @@ export const auth = betterAuth({
     ...(configuredAuthOrigin ? [configuredAuthOrigin] : []),
     ...vercelOrigins,
   ],
+  hooks: {
+    before: blockGenericAuthImageInput,
+  },
   emailAndPassword: { enabled: true, autoSignIn: true, minPasswordLength: 12, maxPasswordLength: 128 },
   rateLimit: {
     enabled: true,
@@ -49,10 +53,10 @@ export const auth = betterAuth({
           db.select({ imagePath: schema.categories.imagePath }).from(schema.categories).where(eq(schema.categories.userId, user.id)),
           db.select({ imagePath: schema.transactions.imagePath }).from(schema.transactions).where(eq(schema.transactions.userId, user.id)),
         ])
-        await Promise.all([
-          ...userCategories.map((item) => removeImage(item.imagePath)),
-          ...userTransactions.map((item) => removeImage(item.imagePath)),
-          removeImage(user.image),
+        await removeImagesForUser(user.id, [
+          ...userCategories.map((item) => item.imagePath),
+          ...userTransactions.map((item) => item.imagePath),
+          user.image,
         ])
         await db.delete(schema.transactions).where(eq(schema.transactions.userId, user.id))
         await db.delete(schema.budgets).where(eq(schema.budgets.userId, user.id))
