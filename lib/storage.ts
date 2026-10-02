@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import {
   classifyStorageReference,
   isAuthorizedStorageReference,
+  parseUnownedLegacyStorageReference,
   type AuthorizedStorageReference,
   type StorageFolder,
 } from '@/lib/storage-policy'
@@ -18,6 +19,20 @@ type StorageClient = { from: (bucketName: string) => StorageBucketClient }
 declare const preparedRemovalBrand: unique symbol
 export type PreparedImageRemoval = AuthorizedStorageReference & { readonly [preparedRemovalBrand]: true }
 const preparedRemovals = new WeakSet<object>()
+declare const storedImageProvenanceBrand: unique symbol
+
+export type StoredImageProvenance = Readonly<{
+  ownerId: string
+  value: string | null | undefined
+  readonly [storedImageProvenanceBrand]: true
+}>
+const storedImageProvenances = new WeakSet<object>()
+
+export function createStoredImageProvenance(ownerId: string, storedValue: string | null | undefined): StoredImageProvenance {
+  const provenance = { ownerId, value: storedValue }
+  storedImageProvenances.add(provenance)
+  return provenance as StoredImageProvenance
+}
 
 function storage() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -53,6 +68,22 @@ export function prepareImageRemovalForUser(userId: string, value: string | null 
   return reference as PreparedImageRemoval
 }
 
+function authorizeStoredImageForUser(userId: string, provenance: StoredImageProvenance): AuthorizedStorageReference | null {
+  if (!userId || !storedImageProvenances.has(provenance) || provenance.ownerId !== userId) return null
+  const regular = classifyStorageReference(provenance.value, userId, policyConfig())
+  if (isAuthorizedStorageReference(regular)) return regular
+  const legacy = parseUnownedLegacyStorageReference(provenance.value, policyConfig())
+  if (!legacy) return null
+  return { ...legacy, ownerId: userId }
+}
+
+export function prepareStoredImageRemovalForUser(userId: string, provenance: StoredImageProvenance): PreparedImageRemoval | null {
+  const reference = authorizeStoredImageForUser(userId, provenance)
+  if (!reference) return null
+  preparedRemovals.add(reference)
+  return reference as PreparedImageRemoval
+}
+
 export function createStorageAuthorizationOperations(getStorage: () => StorageClient = storage) {
   const operations = {
     async signImageUrlsForUser(userId: string, values: Array<string | null | undefined>) {
@@ -62,6 +93,30 @@ export function createStorageAuthorizationOperations(getStorage: () => StorageCl
         const reference = classifyStorageReference(value, userId, policyConfig())
         if (reference.kind === 'legacy-local-public') result.set(reference.value, reference.publicPath)
         else if (isAuthorizedStorageReference(reference)) authorizedByPath.set(reference.objectPath, reference)
+      }
+      const authorized = [...authorizedByPath.values()]
+      if (!authorized.length) return result
+      const { data, error } = await getStorage().from(bucket).createSignedUrls(authorized.map(item => item.objectPath), 60 * 60)
+      if (error) throw new Error(`Falha ao proteger imagens: ${error.message}`)
+      ;(data ?? []).forEach((item, index) => {
+        const reference = authorized[index]
+        if (reference && item.signedUrl) result.set(reference.value, item.signedUrl)
+      })
+      return result
+    },
+
+    async signStoredImageUrlsForUser(userId: string, records: StoredImageProvenance[]) {
+      const result = new Map<string, string>()
+      const authorizedByPath = new Map<string, AuthorizedStorageReference>()
+      for (const record of records) {
+        const reference = authorizeStoredImageForUser(userId, record)
+        if (reference) authorizedByPath.set(reference.objectPath, reference)
+        else {
+          const local = classifyStorageReference(record.value, userId, policyConfig())
+          if (storedImageProvenances.has(record) && record.ownerId === userId && local.kind === 'legacy-local-public') {
+            result.set(local.value, local.publicPath)
+          }
+        }
       }
       const authorized = [...authorizedByPath.values()]
       if (!authorized.length) return result
@@ -87,11 +142,18 @@ export function createStorageAuthorizationOperations(getStorage: () => StorageCl
       const references = values.map(value => prepareImageRemovalForUser(userId, value))
       await operations.removePreparedImages(references)
     },
+
+    async removeStoredImagesForUser(userId: string, records: StoredImageProvenance[]) {
+      const references = records.map(record => prepareStoredImageRemovalForUser(userId, record))
+      await operations.removePreparedImages(references)
+    },
   }
   return operations
 }
 
 const authorizedStorage = createStorageAuthorizationOperations()
 export const signImageUrlsForUser = authorizedStorage.signImageUrlsForUser
+export const signStoredImageUrlsForUser = authorizedStorage.signStoredImageUrlsForUser
 export const removePreparedImages = authorizedStorage.removePreparedImages
 export const removeImagesForUser = authorizedStorage.removeImagesForUser
+export const removeStoredImagesForUser = authorizedStorage.removeStoredImagesForUser

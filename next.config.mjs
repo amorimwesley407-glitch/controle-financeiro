@@ -5,7 +5,7 @@ const nextConfig = {
     unoptimized: true,
     remotePatterns: [
       { protocol: 'https', hostname: 'icons.brapi.dev' },
-      { protocol: 'https', hostname: '**.supabase.co', pathname: '/storage/v1/object/public/**' },
+      { protocol: 'https', hostname: 'grjsehbkitlvzxhsacwa.supabase.co', pathname: '/storage/v1/object/sign/**' },
     ],
   },
   async headers() {

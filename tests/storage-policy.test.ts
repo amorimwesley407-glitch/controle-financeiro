@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { classifyStorageReference, isAuthorizedStorageReference } from '@/lib/storage-policy'
+import { classifyStorageReference, isAuthorizedStorageReference, parseUnownedLegacyStorageReference } from '@/lib/storage-policy'
 
 const config = { bucket: 'finance-uploads', supabaseUrl: 'https://project.supabase.co' }
 const uuid = '123e4567-e89b-12d3-a456-426614174000'
@@ -21,6 +21,28 @@ test('classifica os três formatos aceitos', () => {
 
   const local = classifyStorageReference(`/uploads/transaction-images/A-${uuid}.webp`, 'A', config)
   assert.deepEqual(local.kind, 'legacy-local-public')
+})
+
+test('parser legado sem owner aceita somente o namespace histórico estrito', () => {
+  const base = `https://project.supabase.co/storage/v1/object/public/finance-uploads/legacy/category-icons/old_file-1.png`
+  assert.equal(parseUnownedLegacyStorageReference(base, config)?.objectPath, 'legacy/category-icons/old_file-1.png')
+  assert.equal(classifyStorageReference(base, 'A', config).kind, 'invalid')
+
+  const invalid = [
+    base.replace('project.supabase.co', 'other.supabase.co'),
+    base.replace('finance-uploads', 'other'),
+    base.replace('/legacy/category-icons/', '/legacy/../'),
+    base.replace('/legacy/category-icons/', '/legacy/./'),
+    base.replace('/legacy/category-icons/', '/legacy\\category-icons/'),
+    base.replace('/legacy/', '/legacy/%2e%2e/'),
+    base.replace('/legacy/', '/legacy/%252e%252e/'),
+    `${base}?download=1`,
+    `${base}#fragment`,
+    base.replace('category-icons', 'unknown'),
+    base.replace('.png', '.gif'),
+    `${base}/extra`,
+  ]
+  for (const value of invalid) assert.equal(parseUnownedLegacyStorageReference(value, config), null, value)
 })
 
 test('ownership usa igualdade do segmento completo', () => {

@@ -7,6 +7,7 @@ process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://project.supabase.co'
 const storageModule = import('@/lib/storage')
 const uuid = '123e4567-e89b-12d3-a456-426614174000'
 const reference = (owner: string) => `supabase-storage://finance-uploads/${owner}/profile-images/${uuid}.jpg`
+const legacy = (folder = 'category-icons') => `https://project.supabase.co/storage/v1/object/public/finance-uploads/legacy/${folder}/old_file-1.png`
 
 async function storageMock(existing = new Set<string>()) {
   const { createStorageAuthorizationOperations } = await storageModule
@@ -118,4 +119,41 @@ test('objeto estrutural fabricado não constitui autorização de remoção', as
   }
   await operations.removePreparedImages([forged as never])
   assert.deepEqual(calls, { created: 0, signed: [], removed: [] })
+})
+
+test('legacy de perfil, categoria e transação é assinado somente com provenance própria do banco', async () => {
+  const { createStoredImageProvenance } = await storageModule
+  const paths = [
+    'legacy/profile-images/old_file-1.png',
+    'legacy/category-icons/old_file-1.png',
+    'legacy/transaction-images/old_file-1.png',
+  ]
+  const values = ['profile-images', 'category-icons', 'transaction-images'].map(folder => legacy(folder))
+  const { calls, operations } = await storageMock(new Set(paths))
+  const urls = await operations.signStoredImageUrlsForUser('A', values.map(value => createStoredImageProvenance('A', value)))
+  assert.deepEqual(calls.signed, [paths])
+  for (const value of values) assert.match(urls.get(value) ?? '', /^https:\/\/signed\.invalid\//)
+})
+
+test('legacy isolado, estrangeiro ou divergente não cria cliente Storage', async () => {
+  const { createStoredImageProvenance } = await storageModule
+  const { calls, operations } = await storageMock()
+  const value = legacy()
+  await operations.signImageUrlsForUser('A', [value])
+  await operations.signStoredImageUrlsForUser('A', [
+    createStoredImageProvenance('B', value),
+    { ownerId: 'A', value } as never,
+  ])
+  assert.deepEqual(calls, { created: 0, signed: [], removed: [] })
+})
+
+test('capability legacy é opaca e remoção envia somente objeto com provenance própria', async () => {
+  const { createStoredImageProvenance, prepareStoredImageRemovalForUser } = await storageModule
+  const value = legacy()
+  const { calls, operations } = await storageMock()
+  const own = prepareStoredImageRemovalForUser('B', createStoredImageProvenance('B', value))
+  const foreign = prepareStoredImageRemovalForUser('B', createStoredImageProvenance('A', value))
+  const forged = { ...(own ?? {}), objectPath: 'legacy/category-icons/forged.png' }
+  await operations.removePreparedImages([foreign, forged as never, own])
+  assert.deepEqual(calls.removed, [['legacy/category-icons/old_file-1.png']])
 })

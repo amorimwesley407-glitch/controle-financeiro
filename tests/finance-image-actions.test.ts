@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { TestContext } from 'node:test'
+import type { StoredImageProvenance } from '@/lib/storage'
 
 process.env.DATABASE_URL ??= 'postgres://user:pass@localhost:5432/test'
 process.env.BETTER_AUTH_SECRET ??= 'test-secret-with-at-least-32-characters'
@@ -9,6 +10,7 @@ process.env.SUPABASE_STORAGE_BUCKET = 'finance-uploads'
 
 const uuid = '123e4567-e89b-12d3-a456-426614174000'
 const reference = (owner: string) => `supabase-storage://finance-uploads/${owner}/profile-images/${uuid}.jpg`
+const legacyTransaction = 'https://project.supabase.co/storage/v1/object/public/finance-uploads/legacy/transaction-images/old_file-1.png'
 
 function valuesIn(value: unknown, seen = new WeakSet<object>()): unknown[] {
   if (value === null || typeof value !== 'object') return [value]
@@ -49,9 +51,10 @@ async function installHarness(
   })
 
   t.mock.method(financeImageActionRuntime, 'getUserId', async () => sessionUserId)
-  t.mock.method(financeImageActionRuntime, 'prepareImageRemovalForUser', (userId: string, value: string | null | undefined) => {
+  t.mock.method(financeImageActionRuntime, 'createStoredImageProvenance', storage.createStoredImageProvenance)
+  t.mock.method(financeImageActionRuntime, 'prepareStoredImageRemovalForUser', (userId: string, provenance: StoredImageProvenance) => {
     events.push('authorize')
-    return storage.prepareImageRemovalForUser(userId, value)
+    return storage.prepareStoredImageRemovalForUser(userId, provenance)
   })
   t.mock.method(financeImageActionRuntime, 'removePreparedImages', operations.removePreparedImages)
   t.mock.method(financeImageActionRuntime, 'revalidatePath', () => undefined)
@@ -96,7 +99,7 @@ function categoryForm() {
 }
 
 test('updateUserProfile usa sessão B, autoriza antes da mutação e não remove imagem de A', async t => {
-  const harness = await installHarness(t, { image: reference('A') })
+  const harness = await installHarness(t, { id: 'B', image: reference('A') })
   const { updateUserProfile } = await import('@/app/actions/finance')
   const form = new FormData()
   form.set('name', 'Usuário B')
@@ -132,6 +135,15 @@ test('deleteTransaction permite que A remova sua própria imagem e envia o path 
   assert.ok(harness.queryValues.every(values => values.includes('A')))
   assert.ok(harness.events.indexOf('authorize') < harness.events.indexOf('mutation'))
   assert.deepEqual(harness.storageCalls.removed, [[`A/profile-images/${uuid}.jpg`]])
+})
+
+test('deleteTransaction remove legacy somente após consulta do registro da sessão', async t => {
+  const harness = await installHarness(t, { id: 7, userId: 'B', imagePath: legacyTransaction })
+  const { deleteTransaction } = await import('@/app/actions/finance')
+  await deleteTransaction(7)
+  assert.ok(harness.queryValues.every(values => values.includes('B')))
+  assert.ok(harness.events.indexOf('authorize') < harness.events.indexOf('mutation'))
+  assert.deepEqual(harness.storageCalls.removed, [['legacy/transaction-images/old_file-1.png']])
 })
 
 test('updateCategory usa sessão B, autoriza antes da mutação e não remove imagem de A', async t => {

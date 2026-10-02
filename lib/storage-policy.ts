@@ -34,6 +34,14 @@ export type StoragePolicyConfig = {
   supabaseUrl?: string | null
 }
 
+export type ParsedLegacyStorageReference = {
+  kind: 'legacy-supabase-public'
+  value: string
+  objectPath: string
+  folder: StorageFolder
+  fileName: string
+}
+
 const folderSet = new Set<string>(STORAGE_FOLDERS)
 const generatedFileName = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:png|jpg|webp|avif)$/
 const legacyLocalFileName = /^[A-Za-z0-9_-]+\.(?:png|jpg|webp|avif)$/
@@ -106,6 +114,41 @@ function classifyLegacySupabaseReference(
   if (!referenceUrl.pathname.startsWith(prefix)) return invalid(value)
   const objectPath = referenceUrl.pathname.slice(prefix.length)
   return authorizeObjectPath(value, objectPath, authenticatedUserId, 'legacy-supabase-public')
+}
+
+export function parseUnownedLegacyStorageReference(
+  value: string | null | undefined,
+  config: StoragePolicyConfig,
+): ParsedLegacyStorageReference | null {
+  if (!value || !config.bucket || !config.supabaseUrl || !/^https:\/\//i.test(value)) return null
+  if (hasAmbiguousSyntax(value) || hasDotPathSegment(value)) return null
+  let referenceUrl: URL
+  let configuredUrl: URL
+  try {
+    referenceUrl = new URL(value)
+    configuredUrl = new URL(config.supabaseUrl)
+  } catch {
+    return null
+  }
+  if (
+    referenceUrl.protocol !== 'https:' ||
+    configuredUrl.protocol !== 'https:' ||
+    referenceUrl.origin !== configuredUrl.origin ||
+    referenceUrl.username ||
+    referenceUrl.password ||
+    referenceUrl.search ||
+    referenceUrl.hash
+  ) return null
+
+  const prefix = `/storage/v1/object/public/${config.bucket}/legacy/`
+  if (!referenceUrl.pathname.startsWith(prefix)) return null
+  const objectPath = referenceUrl.pathname.slice(`/storage/v1/object/public/${config.bucket}/`.length)
+  if (objectPath.includes('//')) return null
+  const segments = objectPath.split('/')
+  if (segments.length !== 3 || segments[0] !== 'legacy') return null
+  const [, folder, fileName] = segments
+  if (!folderSet.has(folder) || !legacyLocalFileName.test(fileName)) return null
+  return { kind: 'legacy-supabase-public', value, objectPath, folder: folder as StorageFolder, fileName }
 }
 
 function classifyLegacyLocalReference(value: string): ClassifiedStorageReference | null {

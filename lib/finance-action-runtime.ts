@@ -2,7 +2,9 @@ import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { auth } from '@/lib/auth'
 import {
+  createStoredImageProvenance,
   prepareImageRemovalForUser,
+  prepareStoredImageRemovalForUser,
   removePreparedImages,
   uploadImage,
 } from '@/lib/storage'
@@ -13,7 +15,9 @@ export const financeImageActionRuntime = {
     if (!session?.user) throw new Error('Não autorizado')
     return session.user.id
   },
+  createStoredImageProvenance,
   prepareImageRemovalForUser,
+  prepareStoredImageRemovalForUser,
   removePreparedImages,
   uploadImage,
   revalidatePath,
