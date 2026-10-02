@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "db:migrate": "tsx scripts/migrate-db.ts"
+    "db:migrate": "tsx scripts/migrate-db.ts",
+    "storage:migrate-legacy": "tsx scripts/migrate-legacy-storage.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
