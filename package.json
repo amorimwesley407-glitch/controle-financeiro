@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
+    "test": "tsx --test tests/*.test.ts",
+    "local:setup": "node scripts/setup-local.mjs",
+    "local:db": "docker compose up -d --wait db",
+    "local:stop": "docker compose stop db",
     "db:migrate": "tsx scripts/migrate-db.ts",
     "storage:migrate-legacy": "tsx scripts/migrate-legacy-storage.ts"
   },

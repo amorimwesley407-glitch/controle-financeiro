@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { localStorage } from '@/lib/local-storage'
 import {
   classifyStorageReference,
   isAuthorizedStorageReference,
@@ -8,7 +9,8 @@ import {
 } from '@/lib/storage-policy'
 
 const bucket = process.env.SUPABASE_STORAGE_BUCKET || 'finance-uploads'
-const storagePrefix = `supabase-storage://${bucket}/`
+const provider = process.env.STORAGE_PROVIDER || 'supabase'
+const storagePrefix = `${provider === 'local' ? 'local-storage' : 'supabase-storage'}://${bucket}/`
 
 type StorageError = { message: string } | null
 type StorageBucketClient = {
@@ -35,6 +37,8 @@ export function createStoredImageProvenance(ownerId: string, storedValue: string
 }
 
 function storage() {
+  if (provider === 'local') return localStorage()
+  if (provider !== 'supabase') throw new Error('STORAGE_PROVIDER deve ser local ou supabase')
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) throw new Error('Configure NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY')

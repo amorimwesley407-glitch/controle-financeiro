@@ -1,167 +1,135 @@
 # Clareza — Controle Financeiro
 
-Aplicação web de controle financeiro pessoal construída com Next.js. Permite organizar receitas e despesas, acompanhar orçamentos, metas e investimentos, importar lançamentos e armazenar comprovantes e imagens no Supabase.
+Aplicação de controle financeiro pessoal com Next.js, React, TypeScript, Drizzle ORM e Better Auth. Organiza receitas, despesas, categorias, orçamentos, metas e investimentos, com gráficos, importação de lançamentos e imagens privadas.
 
-## Funcionalidades
+## Rodar localmente
 
-- Cadastro e autenticação com e-mail e senha
-- Receitas, despesas e lançamentos recorrentes
-- Categorias personalizadas com ícones e imagens
-- Orçamentos mensais por categoria
-- Metas financeiras
-- Carteira de investimentos
-- Importação de transações por planilha
-- Cotações e histórico de ativos brasileiros
-- Tema claro e escuro
-- Upload de fotos, comprovantes e imagens para o Supabase Storage
-- Dashboard responsivo com gráficos e indicadores
-- Instalação como PWA no celular ou computador, com página offline segura
+Pré-requisitos: Node.js 22 ou superior, npm e Docker com Docker Compose. O Docker precisa estar iniciado.
 
-## Tecnologias
-
-- [Next.js 16](https://nextjs.org/) com App Router e Server Actions
-- [React 19](https://react.dev/)
-- [TypeScript](https://www.typescriptlang.org/)
-- [Tailwind CSS 4](https://tailwindcss.com/)
-- [Drizzle ORM](https://orm.drizzle.team/)
-- [Supabase](https://supabase.com/) para PostgreSQL e Storage
-- [Better Auth](https://www.better-auth.com/) para autenticação
-- [Recharts](https://recharts.org/) para gráficos
-- [Vercel](https://vercel.com/) para hospedagem
-
-## Pré-requisitos
-
-- Node.js 20 ou superior
-- npm
-- Um projeto no Supabase
-
-## Instalação
-
-Clone o repositório e instale as dependências:
+Na pasta do projeto:
 
 ```bash
-git clone https://github.com/amorimwesley407-glitch/controle-financeiro.git
-cd controle-financeiro
-npm install
+npm ci
+npm run local:setup
+npm run local:db
+npm run db:migrate
+npm run dev
 ```
 
-Crie o arquivo `.env.local` usando `.env.example` como referência:
+Abra [http://localhost:3000](http://localhost:3000) e crie uma conta. A senha deve ter pelo menos 12 caracteres.
+
+O comando `local:setup` cria `.env.local` com um segredo aleatório de autenticação. Se o arquivo já existir, ele é preservado: ajuste suas variáveis conforme `.env.example`. O comando `local:db` inicia o PostgreSQL e espera o banco ficar pronto antes de retornar. A migração é idempotente.
+
+O banco e os uploads rodam na própria máquina, sem necessidade de conta no Supabase ou na Vercel. A instalação inicial precisa de internet para baixar as dependências e a imagem Docker. Cotações e histórico de investimentos continuam consultando serviços externos; quando indisponíveis, o painel mantém suas funções financeiras e trata a ausência de cotações. As fontes usam as disponíveis no sistema, sem download no build.
+
+## Configuração local
+
+O arquivo `.env.local` criado pelo setup contém:
 
 ```env
-BETTER_AUTH_SECRET=gere-um-segredo-com-pelo-menos-32-caracteres
+BETTER_AUTH_SECRET=<segredo gerado automaticamente>
 BETTER_AUTH_URL=http://localhost:3000
-DATABASE_URL=postgresql://postgres.PROJECT_REF:SENHA@HOST-DO-POOLER:6543/postgres
-NEXT_PUBLIC_SUPABASE_URL=https://PROJECT_REF.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=sb_secret_...
+DATABASE_URL=postgresql://clareza:clareza_local@127.0.0.1:5433/controle_financeiro
+STORAGE_PROVIDER=local
+LOCAL_STORAGE_DIR=.local/uploads
 SUPABASE_STORAGE_BUCKET=finance-uploads
 BRAPI_TOKEN=
 ```
 
-> Nunca envie `.env.local` ao Git. `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` e `BETTER_AUTH_SECRET` são segredos de servidor.
+`BRAPI_TOKEN` é opcional para ampliar a lista de cotações. As variáveis do Supabase podem ficar vazias no modo local. Nunca envie `.env.local` ao Git.
 
-Se a senha do banco contiver caracteres especiais, codifique-os na URL. Por exemplo, `!` deve ser escrito como `%21`.
+O PostgreSQL é publicado somente em `127.0.0.1:5433`, para evitar conflito com um banco existente na porta 5432. Caso a porta 5433 esteja ocupada, altere o mapeamento em `compose.yaml` e a porta de `DATABASE_URL`.
 
-## Configuração do Supabase
+Se usar outra porta para o Next.js, ajuste também `BETTER_AUTH_URL` para a URL exata aberta no navegador.
 
-1. No painel do Supabase, abra **Connect → ORM → Drizzle**.
-2. Copie a URL do **Transaction Pooler**, na porta `6543`, para `DATABASE_URL`.
-3. Em **Settings → API Keys**, crie ou copie uma Secret Key para `SUPABASE_SERVICE_ROLE_KEY`.
-4. Configure a Project URL em `NEXT_PUBLIC_SUPABASE_URL`.
-5. Execute a migração:
+Para acessar por IP ou executar desenvolvimento e produção em portas diferentes, adicione as URLs exatas em `.env.local` e reinicie os servidores:
 
-```bash
-npm run db:migrate
+```env
+BETTER_AUTH_TRUSTED_ORIGINS=http://localhost:3000,http://localhost:3001,http://172.22.11.31:3000,http://172.22.11.31:3001
 ```
 
-A migração em [`lib/db/migration.sql`](lib/db/migration.sql) cria as tabelas, relacionamentos, índices e o bucket privado `finance-uploads`. A aplicação fornece URLs temporárias somente para usuários autenticados. A migração é idempotente e pode ser executada novamente com segurança.
+Substitua o IP pelo endereço da sua máquina. Essa lista também libera os arquivos de desenvolvimento do Next.js para os mesmos hosts.
 
-## Desenvolvimento local
+## Dados e imagens
 
-Inicie o servidor:
+- O banco persiste no volume Docker `controle-financeiro-local_postgres-data`.
+- As novas imagens ficam em `.local/uploads`, fora da pasta pública e ignoradas pelo Git.
+- A rota `/api/uploads/…` valida a sessão e o dono do arquivo a cada leitura, sem cache público.
+- Os uploads aceitam PNG, JPEG, WebP e AVIF até 2 MB, com validação do formato.
+
+Para parar o banco sem apagar os dados:
 
 ```bash
+npm run local:stop
+```
+
+Nas próximas execuções, basta iniciar o banco e o servidor:
+
+```bash
+npm run local:db
 npm run dev
 ```
 
-Acesse [http://localhost:3000](http://localhost:3000).
+Para backup, preserve tanto o volume do PostgreSQL quanto a pasta `.local/uploads`. O ambiente local inicia com um banco independente; contas, lançamentos e imagens existentes no Supabase não são importados automaticamente.
+
+## Build de produção local
+
+Com o banco iniciado e `.env.local` configurado:
+
+```bash
+npm run build
+npm start
+```
+
+Abra a mesma URL `http://localhost:3000`. Analytics só é ativado na Vercel. A PWA está disponível no build de produção em localhost ou HTTPS; o service worker guarda apenas arquivos estáticos e a página offline, sem dados financeiros, sessões ou imagens privadas.
 
 ## Scripts
 
 | Comando | Descrição |
 | --- | --- |
+| `npm run local:setup` | Cria o ambiente local e o segredo de autenticação |
+| `npm run local:db` | Inicia o PostgreSQL local e espera sua disponibilidade |
+| `npm run local:stop` | Para o banco preservando os dados |
+| `npm run db:migrate` | Aplica o schema PostgreSQL |
 | `npm run dev` | Inicia o servidor de desenvolvimento |
 | `npm run build` | Gera o build de produção |
 | `npm start` | Executa o build de produção |
+| `npm test` | Executa os testes |
 | `npm run lint` | Verifica o código com ESLint |
-| `npm run db:migrate` | Aplica o schema PostgreSQL e prepara o Storage |
 
-Para uma validação completa antes de publicar:
+Validação:
 
 ```bash
+npm test
 npx tsc --noEmit
 npm run lint
 npm run build
 ```
 
-## Deploy na Vercel
+## Supabase e Vercel (opcionais)
 
-1. Importe este repositório na Vercel.
-2. Em **Project Settings → Environment Variables**, cadastre todas as variáveis de `.env.example`.
-3. Aplique os segredos aos ambientes necessários, preferencialmente separando produção e preview.
-4. Em produção, defina a URL pública exata:
+A integração remota continua disponível. Para usá-la, configure `DATABASE_URL` do Supabase, `STORAGE_PROVIDER=supabase`, `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET` e `BETTER_AUTH_URL` com o domínio público HTTPS. Execute `npm run db:migrate` no ambiente escolhido. Veja [SUPABASE_VERCEL.md](SUPABASE_VERCEL.md).
 
-```env
-BETTER_AUTH_URL=https://seu-dominio.vercel.app
-```
-
-5. Faça o deploy ou um redeploy depois de alterar variáveis.
-
-O Better Auth também reconhece automaticamente as URLs fornecidas pela Vercel para produção, previews e branches. Mesmo assim, `BETTER_AUTH_URL` deve apontar para o domínio definitivo usado pelos usuários.
-
-## Instalação como aplicativo (PWA)
-
-Depois do deploy HTTPS, navegadores compatíveis exibem o botão **Instalar Clareza**. Também é possível usar o menu do Chrome/Edge ou, no iPhone e iPad, **Compartilhar → Adicionar à Tela de Início**.
-
-O service worker armazena apenas o shell offline e arquivos estáticos versionados. Páginas autenticadas, respostas de API, sessões, dados financeiros e imagens privadas não são gravados no cache offline.
-
-## Estrutura principal
-
-```text
-app/
-  actions/finance.ts       Ações financeiras executadas no servidor
-  api/auth/                Rotas do Better Auth
-  api/stocks/              Consulta de histórico de ativos
-  sign-in/ e sign-up/      Telas de autenticação
-components/                Dashboard e componentes visuais
-lib/
-  auth.ts                  Configuração de autenticação
-  db/                      Cliente, schema e migração PostgreSQL
-  storage.ts               Upload e remoção no Supabase Storage
-scripts/                   Scripts de banco e migração de dados
-```
-
-## Segurança
-
-- O banco é acessado somente pelo servidor através de `DATABASE_URL`.
-- A chave secreta do Supabase nunca deve receber o prefixo `NEXT_PUBLIC_`.
-- As tabelas possuem RLS habilitado sem políticas públicas; a aplicação usa a conexão PostgreSQL do servidor.
-- O Storage aceita apenas PNG, JPEG, WebP e AVIF, com limite de 2 MB por imagem.
-- Cada consulta financeira valida o usuário autenticado antes de ler ou alterar dados.
+Armazenamento em disco precisa de uma máquina com disco persistente; para Vercel, selecione o provedor Supabase. Mudar de provedor não copia arquivos existentes.
 
 ## Solução de problemas
 
-### `Invalid origin`
+- **Docker indisponível:** inicie o Docker Desktop ou o serviço Docker e confira as permissões do usuário.
+- **Banco não conecta:** execute `npm run local:db` e confira `DATABASE_URL`, especialmente a porta 5433.
+- **Invalid origin:** faça `BETTER_AUTH_URL` corresponder exatamente à URL do navegador e reinicie a aplicação.
+- **Imagens não aparecem:** confira `STORAGE_PROVIDER=local`, a pasta `LOCAL_STORAGE_DIR` e a sessão autenticada.
 
-Confirme que `BETTER_AUTH_URL` corresponde exatamente ao domínio aberto no navegador, sem barra no final, e faça um redeploy.
+## Estrutura
 
-### `password authentication failed`
-
-Confira a senha do banco, o usuário `postgres.PROJECT_REF` e a URL do Transaction Pooler. Garanta também que exista apenas uma linha `DATABASE_URL` no arquivo de ambiente.
-
-### Imagens não aparecem
-
-Verifique `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, o nome do bucket e se o bucket privado `finance-uploads` existe.
-
-## Licença
+```text
+app/                       Páginas, ações financeiras e APIs
+app/api/uploads/           Leitura autenticada de imagens locais
+components/                Dashboard e componentes visuais
+lib/db/                    Schema e migração PostgreSQL
+lib/local-storage.ts       Armazenamento privado em disco
+lib/storage.ts             Upload, URLs e remoção por usuário
+scripts/                   Setup e migrações
+compose.yaml               PostgreSQL local persistente
+```
 
 Projeto privado para uso pessoal.

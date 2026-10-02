@@ -79,8 +79,9 @@ function classifyPrivateReference(
   authenticatedUserId: string,
   bucket: string,
 ): ClassifiedStorageReference | null {
-  const prefix = `supabase-storage://${bucket}/`
-  if (!value.startsWith('supabase-storage://')) return null
+  const scheme = value.startsWith('local-storage://') ? 'local-storage' : 'supabase-storage'
+  const prefix = `${scheme}://${bucket}/`
+  if (!value.startsWith(`${scheme}://`)) return null
   if (!bucket || hasAmbiguousSyntax(value) || value.includes('?') || value.includes('#') || !value.startsWith(prefix)) return invalid(value)
   return authorizeObjectPath(value, value.slice(prefix.length), authenticatedUserId, 'private-storage')
 }

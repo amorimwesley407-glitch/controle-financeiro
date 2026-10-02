@@ -17,14 +17,11 @@ const vercelOrigins = [
 ].filter((origin): origin is string => Boolean(origin))
 
 const configuredAuthOrigin = toOrigin(process.env.BETTER_AUTH_URL)
-const productionAuthOrigin = configuredAuthOrigin?.includes('localhost')
-  ? vercelOrigins[0]
-  : configuredAuthOrigin
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: 'pg', schema }),
   secret: process.env.BETTER_AUTH_SECRET,
-  baseURL: productionAuthOrigin || vercelOrigins[0] || 'http://localhost:3000',
+  baseURL: configuredAuthOrigin || vercelOrigins[0] || 'http://localhost:3000',
   trustedOrigins: [
     ...(process.env.NODE_ENV === 'development' ? ['http://localhost:3000'] : []),
     ...(configuredAuthOrigin ? [configuredAuthOrigin] : []),

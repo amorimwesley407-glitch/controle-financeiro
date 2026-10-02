@@ -18,4 +18,10 @@ CREATE INDEX IF NOT EXISTS "holdings_user_idx" ON "holdings" ("userId");
 CREATE INDEX IF NOT EXISTS "session_user_idx" ON "session" ("userId");
 CREATE INDEX IF NOT EXISTS "account_user_idx" ON "account" ("userId");
 CREATE INDEX IF NOT EXISTS "budgets_category_idx" ON "budgets" ("categoryId");
-INSERT INTO storage.buckets (id, name, public) VALUES ('finance-uploads', 'finance-uploads', false) ON CONFLICT (id) DO UPDATE SET public = false;
+-- Supabase Storage não existe em uma instalação PostgreSQL local.
+DO $$
+BEGIN
+  IF to_regclass('storage.buckets') IS NOT NULL THEN
+    INSERT INTO storage.buckets (id, name, public) VALUES ('finance-uploads', 'finance-uploads', false) ON CONFLICT (id) DO UPDATE SET public = false;
+  END IF;
+END $$;
