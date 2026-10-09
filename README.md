@@ -73,7 +73,7 @@ Se a senha do banco contiver caracteres especiais, codifique-os na URL. Por exem
 npm run db:migrate
 ```
 
-A migração em [`lib/db/migration.sql`](lib/db/migration.sql) cria as tabelas, relacionamentos, índices e o bucket privado `finance-uploads`. A aplicação fornece URLs temporárias somente para usuários autenticados. A migração é idempotente e pode ser executada novamente com segurança.
+As migrações em [`lib/db/migrations/0001_init.sql`](lib/db/migrations/0001_init.sql) (aplicadas em ordem e registradas na tabela `schema_migrations`) criam as tabelas, relacionamentos, índices e o bucket privado `finance-uploads`. A aplicação fornece URLs temporárias somente para usuários autenticados. As migrações são idempotentes e podem ser executadas novamente com segurança.
 
 ## Desenvolvimento local
 

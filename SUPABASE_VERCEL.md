@@ -2,7 +2,7 @@
 
 ## 1. Criar o banco e o bucket
 
-No painel do Supabase, abra **SQL Editor**, cole o conteúdo de `lib/db/migration.sql` e execute uma vez.
+No painel do Supabase, abra **SQL Editor**, cole o conteúdo de `lib/db/migrations/0001_init.sql` e execute uma vez.
 O script é idempotente: cria as tabelas, índices e o bucket privado `finance-uploads`.
 
 ## 2. Configurar o ambiente local
