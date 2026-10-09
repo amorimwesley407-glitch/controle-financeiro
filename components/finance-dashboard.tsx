@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { getBudgetAlerts } from "@/lib/finance";
 import Image from "next/image";
 import {
   Area,
@@ -217,44 +218,6 @@ const brl = (c: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
     c / 100,
   );
-function getBudgetAlerts(
-  transactions: Tx[],
-  budgets: Budget[],
-  categories: Category[],
-  currentDate: string,
-) {
-  const currentMonth = currentDate.slice(0, 7);
-  const monthTransactions = transactions.filter((item) =>
-    item.date.startsWith(currentMonth),
-  );
-  return budgets
-    .filter((budget) => budget.month === currentMonth)
-    .map((budget) => {
-      const normalizedName = budget.name.trim().toLocaleLowerCase("pt-BR");
-      const category = categories.find(
-        (item) => budget.categoryId ? item.id === budget.categoryId : item.name.trim().toLocaleLowerCase("pt-BR") === normalizedName,
-      );
-      const spent = monthTransactions
-        .filter(
-          (item) =>
-            item.type === "expense" &&
-            item.date <= currentDate &&
-            (category
-              ? item.categoryId === category.id
-              : (item.categoryName ?? "")
-                  .trim()
-                  .toLocaleLowerCase("pt-BR") === normalizedName),
-        )
-        .reduce((sum, item) => sum + item.amountCents, 0);
-      return {
-        ...budget,
-        spent,
-        percentage: Math.round((spent / budget.limitCents) * 100),
-      };
-    })
-    .filter((budget) => budget.percentage >= 70)
-    .sort((a, b) => b.percentage - a.percentage);
-}
 const chartConfig = {
   receitas: { label: "Receitas", color: "var(--chart-1)" },
   despesas: { label: "Despesas", color: "var(--chart-2)" },

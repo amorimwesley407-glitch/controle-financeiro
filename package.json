@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "test": "vitest run",
     "db:migrate": "tsx scripts/migrate-db.ts"
   },
   "dependencies": {
@@ -41,7 +42,9 @@
     "postcss": "^8.5.26",
     "tailwindcss": "^4.2.0",
     "tsx": "^4.23.1",
-    "typescript": "5.7.3"
+    "typescript": "5.7.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.3"
   },
   "pnpm": {
     "overrides": {

@@ -6,19 +6,14 @@ import { and, eq } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { budgets, categories, goals, holdings, transactions, user as users } from '@/lib/db/schema'
+import { parseMoneyToCents } from '@/lib/money'
 import { removeImage, uploadImage } from '@/lib/storage'
 import { z } from 'zod'
 
 async function getUserId() { const session = await auth.api.getSession({ headers: await headers() }); if (!session?.user) throw new Error('Não autorizado'); return session.user.id }
 const textValue = (value: FormDataEntryValue | null) => String(value ?? '').trim()
-const money = z.preprocess(value => {
-  const number = Number(textValue(value as FormDataEntryValue | null).replace(',', '.'))
-  return Number.isFinite(number) ? Math.round(number * 100) : Number.NaN
-}, z.number().int().safe().positive())
-const nonNegativeMoney = z.preprocess(value => {
-  const number = Number(textValue(value as FormDataEntryValue | null).replace(',', '.'))
-  return Number.isFinite(number) ? Math.round(number * 100) : Number.NaN
-}, z.number().int().safe().nonnegative())
+const money = z.preprocess(parseMoneyToCents, z.number().int().safe().positive())
+const nonNegativeMoney = z.preprocess(parseMoneyToCents, z.number().int().safe().nonnegative())
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
 const month = z.string().regex(/^\d{4}-\d{2}$/)
 
