@@ -1,4 +1,6 @@
 const isDev = process.env.NODE_ENV !== 'production'
+// Servidor próprio acessado por http (ex.: Tailscale): sem forçar HTTPS. Na Vercel fica desligado.
+const allowHttp = isDev || process.env.ALLOW_HTTP === 'true'
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -15,7 +17,7 @@ const nextConfig = {
       "default-src 'self'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'", "object-src 'none'",
       `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`, "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.supabase.co https://icons.brapi.dev", "font-src 'self' data:", "connect-src 'self'",
-      ...(isDev ? [] : ['upgrade-insecure-requests']),
+      ...(allowHttp ? [] : ['upgrade-insecure-requests']),
     ].join('; ')
     return [{ source: '/(.*)', headers: [
       { key: 'Content-Security-Policy', value: contentSecurityPolicy },
@@ -23,7 +25,7 @@ const nextConfig = {
       { key: 'X-Content-Type-Options', value: 'nosniff' },
       { key: 'X-Frame-Options', value: 'DENY' },
       { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
-      ...(isDev ? [] : [{ key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' }]),
+      ...(allowHttp ? [] : [{ key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' }]),
     ] }, { source: '/sw.js', headers: [{ key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' }] }]
   },
 }

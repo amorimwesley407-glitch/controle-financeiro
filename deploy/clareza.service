@@ -1,0 +1,15 @@
+# Serviço systemd de usuário para rodar o Clareza neste servidor (sem sudo).
+# Instalação: veja "Rodar como serviço" no README.
+[Unit]
+Description=Clareza (Next.js) na porta 3000
+After=network-online.target
+
+[Service]
+WorkingDirectory=/opt/controle-financeiro
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -H 0.0.0.0 -p 3000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
