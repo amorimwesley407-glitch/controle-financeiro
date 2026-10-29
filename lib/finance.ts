@@ -92,3 +92,47 @@ export function getSpendingAlerts(transactions: AlertTx[], income: number, expen
   if (!alerts.length) alerts.push('Nenhum alerta crítico identificado com os dados atuais.')
   return alerts
 }
+
+type ComparisonTx = { type: string; amountCents: number; date: string; categoryName?: string }
+
+const previousMonthOf = (month: string) => {
+  const [year, monthIndex] = month.split('-').map(Number)
+  return monthIndex === 1 ? `${year - 1}-12` : `${year}-${String(monthIndex - 1).padStart(2, '0')}`
+}
+
+/**
+ * Despesas por categoria em `selectedMonth` (AAAA-MM) comparadas com o mês anterior.
+ * No mês corrente compara só até o mesmo dia nos dois meses, para não comparar meio mês com um mês inteiro.
+ * Linhas ordenadas pela maior diferença em reais, para cima ou para baixo.
+ */
+export function getCategoryComparison(transactions: ComparisonTx[], selectedMonth: string, currentDate: string) {
+  const previousMonth = previousMonthOf(selectedMonth)
+  const untilDay = selectedMonth === currentDate.slice(0, 7) ? currentDate.slice(8, 10) : null
+  const totals = new Map<string, { current: number; previous: number }>()
+  for (const item of transactions) {
+    if (item.type !== 'expense') continue
+    const month = item.date.slice(0, 7)
+    if (month !== selectedMonth && month !== previousMonth) continue
+    if (untilDay && item.date.slice(8, 10) > untilDay) continue
+    const name = item.categoryName ?? 'Sem categoria'
+    const entry = totals.get(name) ?? { current: 0, previous: 0 }
+    if (month === selectedMonth) entry.current += item.amountCents
+    else entry.previous += item.amountCents
+    totals.set(name, entry)
+  }
+  const rows = [...totals].map(([name, { current, previous }]) => ({
+    name,
+    current,
+    previous,
+    difference: current - previous,
+    percentage: previous ? Math.round(((current - previous) / previous) * 100) : null,
+  }))
+  rows.sort((a, b) => Math.abs(b.difference) - Math.abs(a.difference) || a.name.localeCompare(b.name, 'pt-BR'))
+  return {
+    previousMonth,
+    untilDay: untilDay ? Number(untilDay) : null,
+    rows,
+    totalCurrent: rows.reduce((sum, row) => sum + row.current, 0),
+    totalPrevious: rows.reduce((sum, row) => sum + row.previous, 0),
+  }
+}
