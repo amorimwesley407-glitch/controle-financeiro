@@ -4162,12 +4162,13 @@ function TransactionTable({
   function exportCsv() {
     const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
     const lines = [
-      ["Descrição", "Data", "Tipo", "Valor"],
+      ["Descrição", "Data", "Tipo", "Valor", "Categoria"],
       ...rows.map((t) => [
         t.description,
         t.date,
         t.type === "income" ? "Receita" : "Despesa",
         (t.amountCents / 100).toFixed(2).replace(".", ","),
+        t.categoryName ?? "",
       ]),
     ].map((line) => line.map((value) => escape(String(value))).join(";"));
     const url = URL.createObjectURL(
@@ -4269,7 +4270,9 @@ function TransactionTable({
         };
       });
       const result = await importTransactions(parsed);
-      toast.success(`${result.count} transações importadas.`);
+      toast.success(
+        `${result.count} transações importadas${result.newCategories ? ` e ${result.newCategories} categoria${result.newCategories === 1 ? "" : "s"} criada${result.newCategories === 1 ? "" : "s"}` : ""}.`,
+      );
     } catch (error) {
       toast.error(
         error instanceof Error
