@@ -116,6 +116,14 @@ O app fica em `http://IP-DO-SERVIDOR:3000` e volta sozinho depois de reiniciar a
 | `npm start` | Executa o build de produção |
 | `npm run lint` | Verifica o código com ESLint |
 | `npm run db:migrate` | Aplica o schema PostgreSQL e prepara o Storage |
+| `npm run db:categorize` | Sugere categorias para lançamentos sem categoria (`-- --apply` grava) |
+| `npm test` | Roda os testes (Vitest) |
+
+Os testes de isolamento entre usuários (`app/actions/finance.isolation.test.ts`) só rodam com `TEST_DATABASE_URL` apontando para um banco **descartável**, porque ele é apagado e recriado a cada execução. No CI isso já é configurado. Localmente, por exemplo:
+
+```bash
+TEST_DATABASE_URL=postgresql://USUARIO:SENHA@127.0.0.1:5433/controle_financeiro_test npm test
+```
 
 Para uma validação completa antes de publicar:
 
