@@ -85,6 +85,28 @@ npm run dev
 
 Acesse [http://localhost:3000](http://localhost:3000).
 
+## Rodar como serviço em servidor próprio
+
+Para manter o app no ar num servidor seu (acessado por http, por exemplo via Tailscale), sem deixar um terminal aberto:
+
+1. No `.env.local`, adicione `ALLOW_HTTP=true`. Assim o app não força HTTPS, o que deixaria a página sem CSS quando acessada por http. Não defina essa variável na Vercel.
+2. Gere o build e instale o serviço de usuário do systemd:
+
+```bash
+npm run build
+mkdir -p ~/.config/systemd/user
+ln -sf "$PWD/deploy/clareza.service" ~/.config/systemd/user/clareza.service
+systemctl --user daemon-reload
+systemctl --user enable --now clareza
+loginctl enable-linger "$USER"   # mantém o serviço rodando sem sessão aberta
+```
+
+O app fica em `http://IP-DO-SERVIDOR:3000` e volta sozinho depois de reiniciar a máquina. Para usar `npm run dev` ao mesmo tempo, use outra porta: `npm run dev -- -H 0.0.0.0 -p 3001`.
+
+- Atualizar depois de mudar o código: `npm run build && systemctl --user restart clareza`
+- Ver os logs: `journalctl --user -u clareza -f`
+- Parar: `systemctl --user stop clareza` (ou `disable --now` para não subir no boot)
+
 ## Scripts
 
 | Comando | Descrição |
