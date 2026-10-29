@@ -4,203 +4,32 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
-import {
-  compoundProjection,
-  getBudgetAlerts,
-  getHoldingPerformance,
-  getMonthlyForecast,
-  getSpendingAlerts,
-} from "@/lib/finance";
+import { compoundProjection, getBudgetAlerts, getHoldingPerformance, getMonthlyForecast, getSpendingAlerts } from "@/lib/finance";
 import Image from "next/image";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Pie,
-  PieChart,
-  XAxis,
-  YAxis,
-} from "recharts";
-import {
-  ArrowDownRight,
-  ArrowUpRight,
-  Bell,
-  Bitcoin,
-  BriefcaseBusiness,
-  BusFront,
-  Calculator,
-  Camera,
-  CalendarDays,
-  Car,
-  ChartColumn,
-  CircleDollarSign,
-  CreditCard,
-  Download,
-  Dumbbell,
-  Gamepad2,
-  Gift,
-  GraduationCap,
-  HeartPulse,
-  House,
-  LayoutDashboard,
-  Lightbulb,
-  LockKeyhole,
-  LogOut,
-  Mail,
-  Menu,
-  Palette,
-  PawPrint,
-  Pencil,
-  Pill,
-  Plus,
-  Printer,
-  ReceiptText,
-  RotateCcw,
-  Scissors,
-  Search,
-  Settings2,
-  ShieldCheck,
-  ShoppingBag,
-  Target,
-  Trash2,
-  TrendingUp,
-  TriangleAlert,
-  Tv,
-  Upload,
-  UserRound,
-  Utensils,
-  WalletCards,
-  Wifi,
-} from "lucide-react";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Pie, PieChart, XAxis, YAxis } from "recharts";
+import { ArrowDownRight, ArrowUpRight, Bell, Bitcoin, Calculator, Camera, CalendarDays, ChartColumn, CircleDollarSign, CreditCard, Download, LayoutDashboard, Lightbulb, LockKeyhole, LogOut, Mail, Menu, Palette, Pencil, Plus, Printer, ReceiptText, RotateCcw, Search, Settings2, ShieldCheck, Target, Trash2, TrendingUp, TriangleAlert, Upload, UserRound, WalletCards } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
-import {
-  addBudget,
-  addCategory,
-  addGoal,
-  addHolding,
-  addTransaction,
-  deleteBudget,
-  deleteCategory,
-  deleteGoal,
-  deleteHolding,
-  deleteTransaction,
-  importTransactions,
-  updateBudget,
-  updateCategory,
-  updateGoal,
-  updateHolding,
-  updateTransaction,
-  updateUserProfile,
-} from "@/app/actions/finance";
+import { addBudget, addCategory, addGoal, addHolding, addTransaction, deleteBudget, deleteCategory, deleteGoal, deleteHolding, deleteTransaction, importTransactions, updateBudget, updateCategory, updateGoal, updateHolding, updateTransaction, updateUserProfile } from "@/app/actions/finance";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@/components/ui/chart";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { FinancialGoalsOrbit } from "@/components/financial-goals-orbit";
-import { AnimatedCard } from "@/components/ui/animated-card";
 import { AnimatedList } from "@/components/ui/animated-list";
 import { LocationTag } from "@/components/ui/location-tag";
 import { GoalsFeatureCard } from "@/components/goals-feature-card";
+import { Budget, Category, Empty, Field, GoalType, HistoricalPoint, HistoryRange, Holding, Metric, Quote, StockQuote, Tx, brl, categoryIconOptions, categoryIcons, chartConfig, getStreamingServiceImage, investmentOptions, isFixedIncomeType, isStreamingCategory, repairImportedText, streamingServiceImages, streamingServices, transactionIconStyles } from "@/components/finance/shared";
 
-type Tx = {
-  id: number;
-  description: string;
-  type: string;
-  amountCents: number;
-  date: string;
-  categoryId: number | null;
-  imagePath?: string | null;
-  recurring?: boolean;
-  categoryName?: string;
-  categoryIcon?: string;
-  categoryImage?: string | null;
-};
-type Category = {
-  id: number;
-  name: string;
-  type: string;
-  color: string;
-  icon: string;
-  imagePath?: string | null;
-};
-type GoalType = {
-  id: number;
-  name: string;
-  targetCents: number;
-  currentCents: number;
-  deadline: string | null;
-};
-type Budget = { id: number; name: string; limitCents: number; month: string; categoryId: number | null };
-type Holding = {
-  id: number;
-  symbol: string;
-  assetType: string;
-  quantity: string;
-  averageCostCents: number;
-  applicationDate?: string | null;
-};
-type Quote = {
-  symbol: string;
-  name: string;
-  value: number;
-  change: number;
-  kind: string;
-};
-type StockQuote = {
-  symbol: string;
-  name: string;
-  logoUrl?: string;
-  price: number;
-  change: number;
-  updatedAt: string | null;
-};
-type HistoricalPoint = { date: number; value: number };
-type HistoryRange = "7d" | "1mo" | "6mo" | "1y";
 type Props = {
   currentDate: string;
   user: { name: string; email: string; image: string | null };
@@ -220,174 +49,6 @@ type View =
   | "investments"
   | "categories"
   | "settings";
-const brl = (c: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
-    c / 100,
-  );
-const chartConfig = {
-  receitas: { label: "Receitas", color: "var(--chart-1)" },
-  despesas: { label: "Despesas", color: "var(--chart-2)" },
-  saldo: { label: "Saldo", color: "var(--chart-3)" },
-} satisfies ChartConfig;
-const categoryIcons = {
-  wallet: WalletCards,
-  food: Utensils,
-  home: House,
-  transport: Car,
-  shopping: ShoppingBag,
-  health: HeartPulse,
-  education: GraduationCap,
-  leisure: Gamepad2,
-  work: BriefcaseBusiness,
-  gift: Gift,
-  barber: Scissors,
-  pet: PawPrint,
-  internet: Wifi,
-  gym: Dumbbell,
-  streaming: Tv,
-  transitBenefit: BusFront,
-  supplements: Pill,
-  bill: CreditCard,
-  cardInsurance: ShieldCheck,
-} as const;
-const transactionIconStyles = {
-  wallet: "border-blue-400/20 bg-blue-500/15 text-blue-400",
-  food: "border-orange-400/20 bg-orange-500/15 text-orange-400",
-  home: "border-cyan-400/20 bg-cyan-500/15 text-cyan-400",
-  transport: "border-sky-400/20 bg-sky-500/15 text-sky-400",
-  shopping: "border-fuchsia-400/20 bg-fuchsia-500/15 text-fuchsia-400",
-  health: "border-rose-400/20 bg-rose-500/15 text-rose-400",
-  education: "border-violet-400/20 bg-violet-500/15 text-violet-400",
-  leisure: "border-purple-400/20 bg-purple-500/15 text-purple-400",
-  work: "border-emerald-400/20 bg-emerald-500/15 text-emerald-400",
-  gift: "border-pink-400/20 bg-pink-500/15 text-pink-400",
-  barber: "border-cyan-400/20 bg-cyan-500/15 text-cyan-400",
-  pet: "border-amber-400/20 bg-amber-500/15 text-amber-400",
-  internet: "border-blue-400/20 bg-blue-500/15 text-blue-400",
-  gym: "border-lime-400/20 bg-lime-500/15 text-lime-400",
-  streaming: "border-purple-400/20 bg-purple-500/15 text-purple-400",
-  transitBenefit: "border-emerald-400/20 bg-emerald-500/15 text-emerald-400",
-  supplements: "border-orange-400/20 bg-orange-500/15 text-orange-400",
-  bill: "border-rose-400/20 bg-rose-500/15 text-rose-400",
-  cardInsurance: "border-teal-400/20 bg-teal-500/15 text-teal-400",
-  default: "border-white/10 bg-white/5 text-zinc-300",
-} as const;
-const categoryIconOptions = [
-  ["wallet", "Carteira"],
-  ["food", "Alimentação"],
-  ["home", "Moradia"],
-  ["transport", "Transporte"],
-  ["shopping", "Compras"],
-  ["health", "Saúde"],
-  ["education", "Educação"],
-  ["leisure", "Lazer"],
-  ["work", "Trabalho"],
-  ["gift", "Presentes"],
-  ["barber", "Barbeiro"],
-  ["pet", "Pet"],
-  ["internet", "Internet"],
-  ["gym", "Academia"],
-  ["streaming", "Streaming"],
-  ["transitBenefit", "Vale-transporte"],
-  ["supplements", "Suplementos"],
-  ["bill", "Fatura"],
-  ["cardInsurance", "Seguro do cartão"],
-] as const;
-const streamingServices = [
-  "Netflix",
-  "Prime Video",
-  "Disney+",
-  "Max",
-  "Globoplay",
-  "Apple TV+",
-  "Paramount+",
-  "YouTube Premium",
-  "Spotify",
-  "Deezer",
-  "Outro streaming",
-] as const;
-const streamingServiceImages: Partial<
-  Record<(typeof streamingServices)[number], string>
-> = {
-  Netflix: "/brands/netflix.svg",
-  "Prime Video": "/brands/prime-video.svg",
-  "Disney+": "/brands/disney-plus.svg",
-  Max: "/brands/max.svg",
-  Globoplay: "/brands/globoplay.svg",
-  "Apple TV+": "/brands/apple-tv-plus.svg",
-  "Paramount+": "/brands/paramount-plus.svg",
-  "YouTube Premium": "/brands/youtube-premium.svg",
-  Spotify: "/brands/spotify.svg",
-  Deezer: "/brands/deezer.svg",
-};
-function getStreamingServiceImage(description: string) {
-  return streamingServiceImages[
-    description as (typeof streamingServices)[number]
-  ];
-}
-function isStreamingCategory(category?: Category) {
-  return Boolean(
-    category &&
-      (category.icon === "streaming" ||
-        category.name.trim().toLocaleLowerCase("pt-BR").includes("streaming")),
-  );
-}
-const investmentOptions = {
-  stock: [
-    ["PETR4", "Petrobras PN"],
-    ["VALE3", "Vale ON"],
-    ["ITUB4", "Itaú Unibanco PN"],
-    ["BBAS3", "Banco do Brasil ON"],
-    ["MGLU3", "Magazine Luiza ON"],
-    ["BBDC4", "Bradesco PN"],
-    ["ABEV3", "Ambev ON"],
-    ["WEGE3", "WEG ON"],
-    ["B3SA3", "B3 ON"],
-    ["ELET3", "Eletrobras ON"],
-    ["RENT3", "Localiza ON"],
-  ],
-  crypto: [
-    ["BTC", "Bitcoin"],
-    ["ETH", "Ethereum"],
-    ["SOL", "Solana"],
-  ],
-  fund: [
-    ["HGLG11", "CSHG Logística"],
-    ["KNRI11", "Kinea Renda Imobiliária"],
-    ["MXRF11", "Maxi Renda"],
-    ["XPML11", "XP Malls"],
-  ],
-  cdb: [["CDB", "Certificado de Depósito Bancário"]],
-  treasury: [["TESOURO-SELIC", "Tesouro Selic"]],
-} as const;
-const isFixedIncomeType = (type: string) =>
-  type === "cdb" || type === "treasury";
-const repairImportedText = (text: string) => {
-  if (!/[ÃÂâ]/.test(text)) return text;
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(
-      Uint8Array.from([...text].map((character) => character.charCodeAt(0))),
-    );
-  } catch {
-    return text;
-  }
-};
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <Label>{label}</Label>
-      {children}
-    </div>
-  );
-}
-
 function FormDialog({
   type,
   categories,
@@ -878,7 +539,6 @@ function FormDialog({
     </Dialog>
   );
 }
-
 export function FinanceDashboard({
   currentDate,
   user,
@@ -1246,7 +906,6 @@ export function FinanceDashboard({
     </div>
   );
 }
-
 function NotificationMenu({
   transactions,
   budgets,
@@ -1365,7 +1024,6 @@ function NotificationMenu({
     </div>
   );
 }
-
 function AccountMenu({
   initials,
   image,
@@ -1443,7 +1101,6 @@ function AccountMenu({
     </div>
   );
 }
-
 function AccountMenuItem({
   icon: Icon,
   children,
@@ -1467,7 +1124,6 @@ function AccountMenuItem({
     </button>
   );
 }
-
 function SettingsView({
   user,
   onNameChange,
@@ -1761,7 +1417,6 @@ function SettingsView({
     </div>
   );
 }
-
 function Nav({
   icon: Icon,
   children,
@@ -2279,7 +1934,6 @@ function ReportsView({
     </div>
   );
 }
-
 function ForecastCard({
   transactions,
   currentDate,
@@ -3158,7 +2812,6 @@ function InvestmentGuideView({
     </div>
   );
 }
-
 const fetchMarket = (url: string) =>
   fetch(url).then((response) => {
     if (!response.ok) throw new Error("Cotações indisponíveis");
@@ -3237,7 +2890,6 @@ function InvestmentsView({
     </div>
   );
 }
-
 function HoldingFlipCard({
   holding,
   stockQuote,
@@ -3765,54 +3417,6 @@ function CategoriesView({ categories }: { categories: Category[] }) {
         )}
       </CardContent>
     </Card>
-  );
-}
-function Metric({
-  title,
-  value,
-  note,
-  icon: Icon,
-}: {
-  title: string;
-  value: string;
-  note: string;
-  icon: typeof Target;
-}) {
-  const accent =
-    title === "Receitas acumuladas"
-      ? "text-emerald-500 dark:text-emerald-400"
-      : title === "Despesas acumuladas"
-        ? "text-rose-500 dark:text-rose-400"
-        : title === "Patrimônio investido"
-          ? "text-sky-500 dark:text-sky-400"
-          : "text-emerald-500 dark:text-emerald-400";
-  return (
-    <AnimatedCard className="overflow-hidden border-0 bg-card shadow-[0_10px_35px_rgba(0,0,0,.14)]">
-      <CardHeader className="relative flex-row items-center justify-between pb-3">
-        <CardDescription className="text-[13px] font-medium text-muted-foreground">
-          {title}
-        </CardDescription>
-        <span className="flex size-9 items-center justify-center rounded-lg border border-border/80 bg-muted/50 text-muted-foreground">
-          <Icon className="size-4" strokeWidth={1.8} />
-        </span>
-      </CardHeader>
-      <CardContent className="relative">
-        <p className="font-mono text-2xl font-semibold tracking-[-.04em] text-foreground">
-          {value}
-        </p>
-        <div className="mt-3 flex items-center gap-2">
-          <span className={`size-1.5 rounded-full bg-current ${accent}`} />
-          <p className={`text-xs font-medium ${accent}`}>{note}</p>
-        </div>
-      </CardContent>
-    </AnimatedCard>
-  );
-}
-function Empty({ text }: { text: string }) {
-  return (
-    <div className="flex min-h-32 items-center justify-center rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-      {text}
-    </div>
   );
 }
 function EditTransactionDialog({
