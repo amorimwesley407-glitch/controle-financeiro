@@ -1,7 +1,7 @@
 import { db } from '@/lib/db'
 import { categories } from '@/lib/db/schema'
 
-const defaultCategories = [
+export const defaultCategories = [
   { name: 'Salário', type: 'income', color: 'green', icon: 'work' },
   { name: 'Renda extra', type: 'income', color: 'green', icon: 'wallet' },
   { name: 'Alimentação', type: 'expense', color: 'orange', icon: 'food' },
@@ -12,6 +12,7 @@ const defaultCategories = [
   { name: 'Lazer', type: 'expense', color: 'purple', icon: 'leisure' },
   { name: 'Compras', type: 'expense', color: 'orange', icon: 'shopping' },
   { name: 'Presentes', type: 'expense', color: 'pink', icon: 'gift' },
+  { name: 'Cuidados pessoais', type: 'expense', color: 'pink', icon: 'barber' },
 ]
 
 export async function createDefaultCategories(userId: string) {
