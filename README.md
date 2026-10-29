@@ -61,8 +61,6 @@ BRAPI_TOKEN=
 
 Se a senha do banco contiver caracteres especiais, codifique-os na URL. Por exemplo, `!` deve ser escrito como `%21`.
 
-Opcional: `CATEGORY_KEYWORDS` adiciona palavras pessoais à categorização automática sem colocá-las no código (o repositório é público). Formato `Categoria=palavra|outra;OutraCategoria=palavra`, por exemplo `CATEGORY_KEYWORDS=Presentes=fulano|ciclano`. Só vale para despesas; defina também na Vercel se quiser lá.
-
 ## Configuração do Supabase
 
 1. No painel do Supabase, abra **Connect → ORM → Drizzle**.

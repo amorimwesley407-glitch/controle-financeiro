@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findSuggestedCategory, parseKeywordRules, suggestCategory } from './categorize'
+import { findSuggestedCategory, suggestCategory } from './categorize'
 
 describe('suggestCategory', () => {
   it.each([
@@ -69,18 +69,3 @@ describe('findSuggestedCategory', () => {
   })
 })
 
-describe('parseKeywordRules', () => {
-  it('lê as regras pessoais da variável de ambiente', () => {
-    const rules = parseKeywordRules(' Presentes = Fulana | ciclano ; Lazer=clube.x ; inválida ; Vazia= ')
-    expect(rules.map(rule => [rule.category, rule.type])).toEqual([['Presentes', 'expense'], ['Lazer', 'expense']])
-    expect(rules[0].pattern.test('pix fulana')).toBe(true)
-    expect(rules[0].pattern.test('fulanagem')).toBe(false)
-    expect(rules[1].pattern.test('clube.x')).toBe(true)
-    expect(rules[1].pattern.test('clubeax')).toBe(false)
-  })
-
-  it('sem a variável não cria regra nenhuma', () => {
-    expect(parseKeywordRules(undefined)).toEqual([])
-    expect(parseKeywordRules('')).toEqual([])
-  })
-})
