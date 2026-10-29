@@ -107,6 +107,31 @@ O app fica em `http://IP-DO-SERVIDOR:3000` e volta sozinho depois de reiniciar a
 - Ver os logs: `journalctl --user -u clareza -f`
 - Parar: `systemctl --user stop clareza` (ou `disable --now` para não subir no boot)
 
+## Backup do banco
+
+`deploy/backup-db.sh` copia o banco do `DATABASE_URL` do `.env.local` para `~/backups/clareza/` com `pg_dump`, confere que a cópia abre e guarda só as 7 mais recentes (mude com `BACKUP_DIR` e `BACKUP_KEEP`). O `pg_dump` precisa ser da mesma versão do servidor ou mais nova; para Postgres 17 no Ubuntu, instale pelo repositório oficial:
+
+```bash
+sudo apt install -y postgresql-common
+sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+sudo apt install -y postgresql-client-17
+```
+
+Para rodar todo dia às 03:00:
+
+```bash
+ln -sf "$PWD/deploy/clareza-backup.service" "$PWD/deploy/clareza-backup.timer" ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now clareza-backup.timer
+systemctl --user start clareza-backup   # faz um backup agora para testar
+```
+
+- Ver os backups: `ls -lh ~/backups/clareza`
+- Ver quando roda e se deu certo: `systemctl --user list-timers clareza-backup` e `journalctl --user -u clareza-backup`
+- Restaurar (substitui os dados atuais do banco): `pg_restore --clean --if-exists --no-owner --dbname="$DATABASE_URL" ~/backups/clareza/ARQUIVO.dump`
+
+Os backups ficam no mesmo disco do banco: protegem contra apagar dados por engano, não contra perder o disco. Para isso, copie de vez em quando a pasta para outro lugar.
+
 ## Scripts
 
 | Comando | Descrição |
