@@ -132,6 +132,22 @@ systemctl --user start clareza-backup   # faz um backup agora para testar
 
 Os backups ficam no mesmo disco do banco: protegem contra apagar dados por engano, não contra perder o disco. Para isso, copie de vez em quando a pasta para outro lugar.
 
+## Atualização automática
+
+`deploy/update-app.sh` traz o que entrou na `main` do GitHub, instala as dependências se o `package-lock.json` mudou, roda `tsc`, os testes e o build, e só então reinicia o serviço `clareza`. Se algum passo falhar, volta para a versão anterior e o app continua no ar. Não faz nada se a pasta estiver em outra branch ou com mudanças não commitadas.
+
+Para rodar todo dia às 03:30 (depois do backup):
+
+```bash
+ln -sf "$PWD/deploy/clareza-update.service" "$PWD/deploy/clareza-update.timer" ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now clareza-update.timer
+systemctl --user start clareza-update   # atualiza agora para testar
+```
+
+- Ver o resultado: `journalctl --user -u clareza-update`
+- Próxima execução: `systemctl --user list-timers clareza-update`
+
 ## Scripts
 
 | Comando | Descrição |
