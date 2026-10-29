@@ -3,11 +3,24 @@ const normalize = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, ''
 
 type Rule = { type: 'expense' | 'income'; category: string; pattern: RegExp }
 
-// A ordem importa: a primeira regra que casar define a categoria.
+/**
+ * Regras pessoais de despesa vindas de uma variável de ambiente, para nomes de pessoas e lugares
+ * não ficarem no código. Formato: "Presentes=fulano|ciclano;Lazer=clube" (sem acentos ou maiúsculas importarem).
+ */
+export function parseKeywordRules(value: string | undefined): Rule[] {
+  return (value ?? '').split(';').flatMap(entry => {
+    const [category, words] = entry.split('=').map(part => part?.trim())
+    const keywords = (words ?? '').split('|').map(word => normalize(word).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).filter(Boolean)
+    return category && keywords.length ? [{ type: 'expense' as const, category, pattern: new RegExp(`\\b(${keywords.join('|')})\\b`) }] : []
+  })
+}
+
+// A ordem importa: a primeira regra que casar define a categoria. As pessoais vêm antes.
 export const CATEGORY_RULES: Rule[] = [
+  ...parseKeywordRules(process.env.CATEGORY_KEYWORDS),
   { type: 'income', category: 'Salário', pattern: /\bsalario\b/ },
   { type: 'income', category: 'Renda extra', pattern: /\bvale[\s-]?transporte\b/ },
-  { type: 'expense', category: 'Presentes', pattern: /\b(doacao|presente|dia?s? das maes|rifa|tay)\b/ },
+  { type: 'expense', category: 'Presentes', pattern: /\b(doacao|presente|dia?s? das maes|rifa)\b/ },
   { type: 'expense', category: 'Cartão de crédito', pattern: /\b(fatura|seguro do cartao|anuidade)\b/ },
   { type: 'expense', category: 'Transporte', pattern: /\b(g(a)?solina|combustivel|shell|uber|99|seguro do carro|insulfilme|amortecedor)\b/ },
   { type: 'expense', category: 'Saúde', pattern: /\b(wellhub|gympass|farmacia|soro|seringa|consulta|exame|whey)\b/ },
