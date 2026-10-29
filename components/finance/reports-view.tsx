@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { getMonthlyForecast } from "@/lib/finance";
+import { getCategoryComparison, getMonthlyForecast } from "@/lib/finance";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { ArrowDownRight, Calculator, ReceiptText, Target, TrendingUp } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Calculator, Minus, ReceiptText, Scale, Target, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Input } from "@/components/ui/input";
@@ -157,6 +157,7 @@ export function ReportsView({
           </CardContent>
         </Card>
       </section>
+      <CategoryComparisonCard transactions={transactions} currentDate={currentDate} />
       <ForecastCard transactions={transactions} currentDate={currentDate} />
       <Card>
         <CardHeader>
@@ -195,6 +196,119 @@ export function ReportsView({
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+const monthName = (month: string) =>
+  new Intl.DateTimeFormat("pt-BR", { month: "long", timeZone: "UTC" }).format(
+    new Date(`${month}-01T00:00:00Z`),
+  );
+
+function Difference({ value, percentage }: { value: number; percentage: number | null }) {
+  if (!value)
+    return (
+      <span className="flex items-center gap-1 text-muted-foreground">
+        <Minus className="size-3.5" /> igual
+      </span>
+    );
+  const Icon = value > 0 ? ArrowUpRight : ArrowDownRight;
+  return (
+    <span
+      className={`flex items-center gap-1 font-mono ${value > 0 ? "text-rose-400" : "text-emerald-400"}`}
+    >
+      <Icon className="size-3.5" />
+      {value > 0 ? "+" : "−"}
+      {brl(Math.abs(value))}
+      {percentage !== null && (
+        <span className="text-xs opacity-80">
+          ({percentage > 0 ? "+" : ""}
+          {percentage}%)
+        </span>
+      )}
+    </span>
+  );
+}
+
+export function CategoryComparisonCard({
+  transactions,
+  currentDate,
+}: {
+  transactions: Tx[];
+  currentDate: string;
+}) {
+  const currentMonth = currentDate.slice(0, 7);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const { previousMonth, untilDay, rows, totalCurrent, totalPrevious } =
+    getCategoryComparison(transactions, selectedMonth, currentDate);
+  const totalDifference = totalCurrent - totalPrevious;
+  return (
+    <Card>
+      <CardHeader className="flex-row items-start justify-between gap-4">
+        <div>
+          <CardTitle>Comparativo com o mês anterior</CardTitle>
+          <CardDescription>
+            Despesas de {monthName(selectedMonth)} versus {monthName(previousMonth)}
+            {untilDay ? `, até o dia ${untilDay} nos dois meses` : ""}
+          </CardDescription>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input
+            type="month"
+            value={selectedMonth}
+            max={currentMonth}
+            onChange={(event) => setSelectedMonth(event.target.value || currentMonth)}
+            aria-label="Mês do comparativo"
+            className="h-10 w-[150px]"
+          />
+          <span className="hidden size-10 shrink-0 items-center justify-center rounded-xl border bg-muted/40 text-muted-foreground sm:flex">
+            <Scale className="size-5" />
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {rows.length ? (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 rounded-xl border bg-muted/35 p-3 text-sm">
+              <span>
+                Total: <span className="font-mono font-semibold">{brl(totalCurrent)}</span>
+                <span className="text-muted-foreground"> (antes {brl(totalPrevious)})</span>
+              </span>
+              <Difference
+                value={totalDifference}
+                percentage={totalPrevious ? Math.round((totalDifference / totalPrevious) * 100) : null}
+              />
+            </div>
+            <div className="flex flex-col divide-y">
+              {rows.slice(0, 8).map((row) => (
+                <div
+                  key={row.name}
+                  className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2.5 text-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{row.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {brl(row.current)} · antes {brl(row.previous)}
+                    </p>
+                  </div>
+                  {row.previous ? (
+                    <Difference value={row.difference} percentage={row.percentage} />
+                  ) : (
+                    <span className="text-xs text-rose-400">nova este mês</span>
+                  )}
+                </div>
+              ))}
+            </div>
+            {rows.length > 8 && (
+              <p className="text-xs text-muted-foreground">
+                Mostrando as 8 categorias que mais mudaram de {rows.length}.
+              </p>
+            )}
+          </div>
+        ) : (
+          <Empty text="Não há despesas neste mês nem no anterior para comparar." />
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

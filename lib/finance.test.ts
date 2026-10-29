@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compoundProjection, getBudgetAlerts, getHoldingPerformance, getMonthlyForecast, getSpendingAlerts } from './finance'
+import { compoundProjection, getBudgetAlerts, getCategoryComparison, getHoldingPerformance, getMonthlyForecast, getSpendingAlerts } from './finance'
 
 const categories = [{ id: 1, name: 'Mercado' }, { id: 2, name: 'Lazer' }]
 const tx = (over: Partial<Parameters<typeof getBudgetAlerts>[0][number]>) => ({
@@ -119,5 +119,47 @@ describe('getSpendingAlerts', () => {
     expect(getSpendingAlerts([{ type: 'expense', amountCents: 100, description: 'Pão' }], 10000, 100, 99)).toEqual([
       'Nenhum alerta crítico identificado com os dados atuais.',
     ])
+  })
+})
+
+describe('getCategoryComparison', () => {
+  const item = (date: string, amountCents: number, categoryName?: string, type = 'expense') => ({ type, amountCents, date, categoryName })
+
+  it('compara cada categoria com o mês anterior e ordena pela maior diferença', () => {
+    const result = getCategoryComparison([
+      item('2026-09-05', 10000, 'Alimentação'),
+      item('2026-10-05', 13500, 'Alimentação'),
+      item('2026-09-10', 20000, 'Transporte'),
+      item('2026-10-10', 12000, 'Transporte'),
+      item('2026-10-12', 5000, 'Lazer'),
+      item('2026-10-01', 200000, 'Salário', 'income'),
+      item('2026-08-20', 99999, 'Alimentação'),
+    ], '2026-10', '2026-11-15')
+    expect(result.previousMonth).toBe('2026-09')
+    expect(result.untilDay).toBeNull()
+    expect(result.rows).toEqual([
+      { name: 'Transporte', current: 12000, previous: 20000, difference: -8000, percentage: -40 },
+      { name: 'Lazer', current: 5000, previous: 0, difference: 5000, percentage: null },
+      { name: 'Alimentação', current: 13500, previous: 10000, difference: 3500, percentage: 35 },
+    ])
+    expect(result.totalCurrent).toBe(30500)
+    expect(result.totalPrevious).toBe(30000)
+  })
+
+  it('no mês corrente compara só até o mesmo dia do mês anterior', () => {
+    const result = getCategoryComparison([
+      item('2026-09-10', 4000, 'Alimentação'),
+      item('2026-09-25', 9000, 'Alimentação'),
+      item('2026-10-08', 3000, 'Alimentação'),
+      item('2026-10-20', 7000, 'Alimentação'),
+    ], '2026-10', '2026-10-15')
+    expect(result.untilDay).toBe(15)
+    expect(result.rows).toEqual([{ name: 'Alimentação', current: 3000, previous: 4000, difference: -1000, percentage: -25 }])
+  })
+
+  it('vira o ano e agrupa lançamentos sem categoria', () => {
+    const result = getCategoryComparison([item('2025-12-03', 1000), item('2026-01-03', 1500)], '2026-01', '2026-03-01')
+    expect(result.previousMonth).toBe('2025-12')
+    expect(result.rows).toEqual([{ name: 'Sem categoria', current: 1500, previous: 1000, difference: 500, percentage: 50 }])
   })
 })
