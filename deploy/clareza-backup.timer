@@ -1,0 +1,11 @@
+# Roda o backup do banco todo dia às 03:00. Persistent=true roda logo ao ligar
+# se o servidor estava desligado no horário.
+[Unit]
+Description=Backup diário do banco do Clareza
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

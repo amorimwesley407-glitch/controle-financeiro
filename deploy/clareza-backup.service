@@ -1,0 +1,8 @@
+# Backup do banco do Clareza. Disparado pelo clareza-backup.timer.
+# Instalação: veja "Backup do banco" no README.
+[Unit]
+Description=Backup do banco do Clareza
+
+[Service]
+Type=oneshot
+ExecStart=/opt/controle-financeiro/deploy/backup-db.sh
