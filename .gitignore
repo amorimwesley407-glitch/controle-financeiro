@@ -21,3 +21,6 @@ node_modules
 
 # Uploads locais legados (agora ficam no Supabase Storage)
 /public/uploads/
+
+# TypeScript incremental build
+*.tsbuildinfo
