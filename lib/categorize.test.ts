@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findSuggestedCategory, suggestCategory } from './categorize'
+import { findSuggestedCategory, parseKeywordRules, suggestCategory } from './categorize'
 
 describe('suggestCategory', () => {
   it.each([
@@ -17,16 +17,15 @@ describe('suggestCategory', () => {
     ['Doação', 'expense', 'Presentes'],
     ['Bolsa presente mãe', 'expense', 'Presentes'],
     ['Dias das mães', 'expense', 'Presentes'],
-    ['Rifa-filha-joilma', 'expense', 'Presentes'],
-    ['Tay', 'expense', 'Presentes'],
+    ['Rifa da escola', 'expense', 'Presentes'],
     ['Fatura', 'expense', 'Cartão de crédito'],
     ['Seguro do Cartão', 'expense', 'Cartão de crédito'],
     ['Seguro do carro', 'expense', 'Transporte'],
     ['Meli +', 'expense', 'Compras'],
     ['Barbeiro', 'expense', 'Cuidados pessoais'],
     ['Corte de cabelo', 'expense', 'Cuidados pessoais'],
-    ['Perfume Touti', 'expense', 'Cuidados pessoais'],
-    ['Ração Bolinha', 'expense', 'Compras'],
+    ['Perfume importado', 'expense', 'Cuidados pessoais'],
+    ['Ração do cachorro', 'expense', 'Compras'],
     ['Cabo flat PS4', 'expense', 'Lazer'],
     ['Salário', 'income', 'Salário'],
     ['Sálario', 'income', 'Salário'],
@@ -67,5 +66,21 @@ describe('findSuggestedCategory', () => {
   it('não sugere nada quando o usuário não tem a categoria da regra', () => {
     expect(findSuggestedCategory('Barbeiro', 'expense', categories)).toBeUndefined()
     expect(findSuggestedCategory('iFood', 'expense', categories)).toBeUndefined()
+  })
+})
+
+describe('parseKeywordRules', () => {
+  it('lê as regras pessoais da variável de ambiente', () => {
+    const rules = parseKeywordRules(' Presentes = Fulana | ciclano ; Lazer=clube.x ; inválida ; Vazia= ')
+    expect(rules.map(rule => [rule.category, rule.type])).toEqual([['Presentes', 'expense'], ['Lazer', 'expense']])
+    expect(rules[0].pattern.test('pix fulana')).toBe(true)
+    expect(rules[0].pattern.test('fulanagem')).toBe(false)
+    expect(rules[1].pattern.test('clube.x')).toBe(true)
+    expect(rules[1].pattern.test('clubeax')).toBe(false)
+  })
+
+  it('sem a variável não cria regra nenhuma', () => {
+    expect(parseKeywordRules(undefined)).toEqual([])
+    expect(parseKeywordRules('')).toEqual([])
   })
 })
