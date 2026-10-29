@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ownedObjectPath, removeImage, signImageUrls } from './storage'
 
 const supabase = vi.hoisted(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://exemplo.supabase.co'
@@ -10,8 +11,6 @@ const supabase = vi.hoisted(() => {
   return { bucket }
 })
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ storage: { from: () => supabase.bucket } }) }))
-
-const { ownedObjectPath, removeImage, signImageUrls } = await import('./storage')
 
 const uuid = '0f8b2a4e-1c3d-4e5f-8a9b-0c1d2e3f4a5b'
 const alice = 'alice123'
