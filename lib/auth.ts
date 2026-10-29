@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import * as schema from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { removeImage } from '@/lib/storage'
+import { createDefaultCategories } from '@/lib/default-categories'
 
 const toOrigin = (host: string | undefined) => {
   if (!host) return null
@@ -59,6 +60,15 @@ export const auth = betterAuth({
         await db.delete(schema.goals).where(eq(schema.goals.userId, user.id))
         await db.delete(schema.holdings).where(eq(schema.holdings.userId, user.id))
         await db.delete(schema.categories).where(eq(schema.categories.userId, user.id))
+      },
+    },
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user) => {
+          await createDefaultCategories(user.id)
+        },
       },
     },
   },

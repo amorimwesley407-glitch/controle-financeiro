@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import useSWR from "swr";
 import { getBudgetAlerts } from "@/lib/finance";
 import Image from "next/image";
 import {
@@ -123,6 +124,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -201,8 +203,6 @@ type Props = {
   goals: GoalType[];
   budgets: Budget[];
   holdings: Holding[];
-  quotes: Quote[];
-  stockQuotes: StockQuote[];
 };
 type View =
   | "dashboard"
@@ -881,8 +881,6 @@ export function FinanceDashboard({
   goals,
   budgets,
   holdings,
-  quotes,
-  stockQuotes,
 }: Props) {
   const router = useRouter();
   const [mobile, setMobile] = useState(false);
@@ -1225,12 +1223,7 @@ export function FinanceDashboard({
             />
           )}
           {view === "investments" && (
-            <InvestmentsView
-              holdings={holdings}
-              quotes={quotes}
-              stockQuotes={stockQuotes}
-              categories={categories}
-            />
+            <InvestmentsView holdings={holdings} categories={categories} />
           )}
           {view === "categories" && <CategoriesView categories={categories} />}
           {view === "settings" && (
@@ -3209,17 +3202,24 @@ function InvestmentGuideView({
   );
 }
 
+const fetchMarket = (url: string) =>
+  fetch(url).then((response) => {
+    if (!response.ok) throw new Error("Cotações indisponíveis");
+    return response.json() as Promise<{ quotes: Quote[]; stockQuotes: StockQuote[] }>;
+  });
 function InvestmentsView({
   holdings,
-  quotes,
-  stockQuotes,
   categories,
 }: {
   holdings: Holding[];
-  quotes: Quote[];
-  stockQuotes: StockQuote[];
   categories: Category[];
 }) {
+  // Cotações vêm de APIs externas: buscadas só ao abrir esta aba, sem travar o carregamento do app.
+  const { data: market, isLoading: marketLoading } = useSWR("/api/market", fetchMarket, {
+    revalidateOnFocus: false,
+  });
+  const quotes = market?.quotes ?? [];
+  const stockQuotes = market?.stockQuotes ?? [];
   const total = holdings.reduce(
     (s, h) => s + Number(h.quantity) * h.averageCostCents,
     0,
@@ -3240,7 +3240,7 @@ function InvestmentsView({
   return (
     <div className="grid gap-6 xl:grid-cols-3">
       <div className="xl:col-span-3">
-        <StockMarket quotes={stockQuotes} />
+        {marketLoading ? <Skeleton className="h-64 w-full rounded-xl" /> : <StockMarket quotes={stockQuotes} />}
       </div>
       <Card className="xl:col-span-2">
         <CardHeader className="flex-row items-start justify-between">
@@ -3276,7 +3276,7 @@ function InvestmentsView({
           )}
         </CardContent>
       </Card>
-      <Quotes quotes={quotes} />
+      {marketLoading ? <Skeleton className="h-64 w-full rounded-xl" /> : <Quotes quotes={quotes} />}
     </div>
   );
 }
