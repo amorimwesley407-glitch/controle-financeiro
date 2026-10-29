@@ -110,6 +110,17 @@ describe.skipIf(!testDatabaseUrl)('isolamento entre usuários', () => {
     expect(imported).toEqual({ userId: ALICE, categoryOwner: ALICE })
   })
 
+  it('importação pula lançamentos que já existem, mas só olhando os de quem importa', async () => {
+    const rows = [
+      { description: 'Feira', type: 'expense' as const, date: '2026-10-01', amountCents: 5000 },
+      { description: 'ônibus', type: 'expense' as const, date: '2026-10-01', amountCents: 450 },
+    ]
+    expect(await actions.importTransactions(rows)).toMatchObject({ count: 1, skipped: 1 })
+    expect(await actions.importTransactions(rows)).toMatchObject({ count: 0, skipped: 2 })
+    const [{ count }] = await sql`SELECT count(*)::int FROM "transactions" WHERE "userId" = ${ALICE}`
+    expect(count).toBe(2)
+  })
+
   it('sugestão automática usa só as categorias de quem cadastra', async () => {
     await actions.addTransaction(form({ description: 'Mercado do mês', type: 'expense', date: '2026-10-04', amount: '200' }))
     await actions.addTransaction(form({ description: 'Uber', type: 'expense', date: '2026-10-04', amount: '20' }))

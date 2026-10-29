@@ -2,11 +2,11 @@
 
 import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
-import { and, eq } from 'drizzle-orm'
+import { and, between, eq } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { budgets, categories, goals, holdings, transactions, user as users } from '@/lib/db/schema'
-import { findMissingCategories, matchCategory, MAX_NEW_CATEGORIES_PER_IMPORT } from '@/lib/import'
+import { findMissingCategories, matchCategory, MAX_NEW_CATEGORIES_PER_IMPORT, skipExistingTransactions } from '@/lib/import'
 import { findSuggestedCategory } from '@/lib/categorize'
 import { parseMoneyToCents } from '@/lib/money'
 import { removeImage, uploadImage } from '@/lib/storage'
@@ -95,7 +95,11 @@ export async function deleteCategory(id:number){const userId=await getUserId();c
 const importedTransaction=z.object({description:z.string().trim().min(2).max(80),type:z.enum(['income','expense']),date,amountCents:z.number().int().safe().positive(),categoryName:z.string().trim().max(30).optional()})
 export async function importTransactions(input:unknown){
   const userId=await getUserId()
-  const rows=z.array(importedTransaction).min(1).max(1000).parse(input)
+  const parsedRows=z.array(importedTransaction).min(1).max(1000).parse(input)
+  const dates=parsedRows.map(row=>row.date).sort()
+  const existing=await db.select({type:transactions.type,date:transactions.date,amountCents:transactions.amountCents,description:transactions.description}).from(transactions).where(and(eq(transactions.userId,userId),between(transactions.date,dates[0],dates.at(-1)!)))
+  const {fresh:rows,skipped}=skipExistingTransactions(parsedRows,existing)
+  if(!rows.length)return{count:0,skipped,newCategories:0}
   let userCategories=await db.select().from(categories).where(eq(categories.userId,userId))
   const missing=findMissingCategories(rows,userCategories)
   if(missing.length>MAX_NEW_CATEGORIES_PER_IMPORT)throw new Error(`O arquivo cria ${missing.length} categorias novas (máximo ${MAX_NEW_CATEGORIES_PER_IMPORT}). Verifique a coluna Categoria.`)
@@ -106,7 +110,7 @@ export async function importTransactions(input:unknown){
   const values=rows.map(row=>({userId,description:row.description,type:row.type,date:row.date,amountCents:row.amountCents,categoryId:(matchCategory(row,userCategories)??(row.categoryName?.trim()?undefined:findSuggestedCategory(row.description,row.type,userCategories)))?.id??null}))
   await db.insert(transactions).values(values)
   revalidatePath('/')
-  return{count:values.length,newCategories:missing.length}
+  return{count:values.length,skipped,newCategories:missing.length}
 }
 export async function addGoal(form: FormData) { const userId = await getUserId(); const parsed = z.object({name:z.string().trim().min(2).max(50),target:money,current:nonNegativeMoney,deadline:z.union([date,z.literal('')])}).parse({name:form.get('name'),target:form.get('target'),current:form.get('current'),deadline:textValue(form.get('deadline'))}); if(parsed.current>parsed.target) throw new Error('O valor atual não pode superar o objetivo'); await db.insert(goals).values({ userId, name:parsed.name, targetCents:parsed.target, currentCents:parsed.current, deadline:parsed.deadline || null }); revalidatePath('/') }
 export async function addBudget(form: FormData) { const userId = await getUserId(); const parsed=z.object({name:z.string().trim().min(2).max(50),limit:money,month,categoryId:z.coerce.number().int().positive()}).parse({name:form.get('name'),limit:form.get('limit'),month:form.get('month'),categoryId:form.get('categoryId')});const category=await db.select({id:categories.id,type:categories.type}).from(categories).where(and(eq(categories.id,parsed.categoryId),eq(categories.userId,userId))).limit(1);if(!category[0]||category[0].type!=='expense')throw new Error('Selecione uma categoria de despesa válida'); await db.insert(budgets).values({ userId, name:parsed.name, limitCents:parsed.limit, month:parsed.month,categoryId:parsed.categoryId }); revalidatePath('/') }

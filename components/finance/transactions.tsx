@@ -470,9 +470,14 @@ export function TransactionTable({
         };
       });
       const result = await importTransactions(parsed);
-      toast.success(
-        `${result.count} transações importadas${result.newCategories ? ` e ${result.newCategories} categoria${result.newCategories === 1 ? "" : "s"} criada${result.newCategories === 1 ? "" : "s"}` : ""}.`,
-      );
+      const skipped = result.skipped
+        ? ` ${result.skipped} ${result.skipped === 1 ? "linha já existia e foi ignorada" : "linhas já existiam e foram ignoradas"}.`
+        : "";
+      if (!result.count) toast.info(`Nenhuma transação nova.${skipped}`);
+      else
+        toast.success(
+          `${result.count} transações importadas${result.newCategories ? ` e ${result.newCategories} categoria${result.newCategories === 1 ? "" : "s"} criada${result.newCategories === 1 ? "" : "s"}` : ""}.${skipped}`,
+        );
     } catch (error) {
       toast.error(
         error instanceof Error

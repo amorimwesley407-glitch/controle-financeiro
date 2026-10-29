@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findMissingCategories, matchCategory } from './import'
+import { findMissingCategories, matchCategory, skipExistingTransactions } from './import'
 
 const existing = [{ id: 1, name: 'Mercado', type: 'expense' }, { id: 2, name: 'Salário', type: 'income' }]
 
@@ -34,5 +34,28 @@ describe('matchCategory', () => {
   it('não acha categoria de outro tipo nem sem nome', () => {
     expect(matchCategory({ type: 'income', categoryName: 'Mercado' }, existing)).toBeUndefined()
     expect(matchCategory({ type: 'expense' }, existing)).toBeUndefined()
+  })
+})
+
+describe('skipExistingTransactions', () => {
+  const row = (description: string, amountCents = 2698, date = '2026-03-02', type = 'expense') => ({ description, type, date, amountCents })
+
+  it('pula o que já existe, ignorando maiúsculas e espaços', () => {
+    const existing = [row('Ifood'), row('Gasolina', 10000, '2026-03-04')]
+    const { fresh, skipped } = skipExistingTransactions([row(' IFOOD '), row('Gasolina', 10000, '2026-03-04'), row('Internet', 5000)], existing)
+    expect(skipped).toBe(2)
+    expect(fresh).toEqual([row('Internet', 5000)])
+  })
+
+  it('não confunde lançamentos com data, valor ou tipo diferentes', () => {
+    const existing = [row('Ifood')]
+    const rows = [row('Ifood', 2699), row('Ifood', 2698, '2026-03-03'), row('Ifood', 2698, '2026-03-02', 'income')]
+    expect(skipExistingTransactions(rows, existing)).toEqual({ fresh: rows, skipped: 0 })
+  })
+
+  it('conta repetições: duas compras iguais no arquivo e uma no banco importa só a segunda', () => {
+    const { fresh, skipped } = skipExistingTransactions([row('Ifood'), row('Ifood')], [row('Ifood')])
+    expect(skipped).toBe(1)
+    expect(fresh).toHaveLength(1)
   })
 })
