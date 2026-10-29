@@ -983,7 +983,6 @@ export function FinanceDashboard({
   function navigate(next: View) {
     setView(next);
     setMobile(false);
-    setSidebarVisible(false);
   }
   async function logout() {
     await authClient.signOut();
