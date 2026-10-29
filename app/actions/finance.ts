@@ -29,7 +29,7 @@ export async function updateUserProfile(form: FormData) {
   const image = newImage ?? (removeImage ? null : existing[0].image)
   const result = await db.update(users).set({ name, image, updatedAt: new Date() }).where(eq(users.id, userId)).returning({ id: users.id })
   if (!result.length) throw new Error('Usuário não encontrado')
-  if ((newImage || removeImage) && existing[0].image) await removeProfileImage(existing[0].image)
+  if ((newImage || removeImage) && existing[0].image) await removeProfileImage(existing[0].image, userId)
   revalidatePath('/')
   return { name, image }
 }
@@ -38,8 +38,8 @@ async function saveProfileImage(image: FormDataEntryValue | null, userId: string
   return image instanceof File ? uploadImage(image, userId, 'profile-images') : null
 }
 
-async function removeProfileImage(imagePath: string | null) {
-  await removeImage(imagePath)
+async function removeProfileImage(imagePath: string | null, userId: string) {
+  await removeImage(imagePath, userId)
 }
 
 export async function addTransaction(form: FormData) {
@@ -77,20 +77,20 @@ export async function updateTransaction(id: number, form: FormData) {
   const newImage = await saveTransactionImage(form.get('image'), userId)
   const removeImage = form.get('removeImage') === 'true'
   await db.update(transactions).set({ description: parsed.description, type: parsed.type, date: parsed.date, amountCents: parsed.amount, categoryId, recurring, imagePath: newImage??(removeImage?null:existing[0].imagePath) }).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId)))
-  if ((newImage || removeImage) && existing[0].imagePath) await removeTransactionImage(existing[0].imagePath)
+  if ((newImage || removeImage) && existing[0].imagePath) await removeTransactionImage(existing[0].imagePath,userId)
   if(recurrenceEnd){const values=[];const [year,monthIndex,day]=parsed.date.split('-').map(Number);for(let offset=1;offset<=120;offset++){const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId,recurring:true})}if(values.length)await db.insert(transactions).values(values)}
   revalidatePath('/')
 }
-export async function deleteTransaction(id: number) { const userId = await getUserId(); const safeId = z.number().int().positive().parse(id); const existing=await db.select().from(transactions).where(and(eq(transactions.id,safeId),eq(transactions.userId,userId))).limit(1); if(!existing[0])throw new Error('Transação não encontrada'); await db.delete(transactions).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId))); await removeTransactionImage(existing[0].imagePath); revalidatePath('/') }
+export async function deleteTransaction(id: number) { const userId = await getUserId(); const safeId = z.number().int().positive().parse(id); const existing=await db.select().from(transactions).where(and(eq(transactions.id,safeId),eq(transactions.userId,userId))).limit(1); if(!existing[0])throw new Error('Transação não encontrada'); await db.delete(transactions).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId))); await removeTransactionImage(existing[0].imagePath,userId); revalidatePath('/') }
 export async function addCategory(form: FormData) { const userId = await getUserId(); const name = z.string().trim().min(2).max(30).parse(form.get('name')); const type = z.enum(['income','expense']).parse(form.get('type')); const color = z.string().regex(/^[a-z-]{3,20}$/).parse(form.get('color') || 'blue'); const icon=categoryIcon.parse(form.get('icon')||'wallet');const imagePath=await saveCategoryImage(form.get('image'),userId);await db.insert(categories).values({ userId, name, type, color, icon, imagePath }); revalidatePath('/') }
 
 const categoryIcon=z.enum(['wallet','food','home','transport','shopping','health','education','leisure','work','gift','barber','pet','internet','gym','streaming','transitBenefit','supplements','bill','cardInsurance'])
 async function saveCategoryImage(image:FormDataEntryValue|null,userId:string){return image instanceof File?uploadImage(image,userId,'category-icons'):null}
-async function removeCategoryImage(imagePath:string|null){await removeImage(imagePath)}
+async function removeCategoryImage(imagePath:string|null,userId:string){await removeImage(imagePath,userId)}
 async function saveTransactionImage(image:FormDataEntryValue|null,userId:string){return image instanceof File?uploadImage(image,userId,'transaction-images'):null}
-async function removeTransactionImage(imagePath:string|null){await removeImage(imagePath)}
-export async function updateCategory(id:number,form:FormData){const userId=await getUserId();const safeId=z.number().int().positive().parse(id);const existing=await db.select().from(categories).where(and(eq(categories.id,safeId),eq(categories.userId,userId))).limit(1);if(!existing[0])throw new Error('Categoria não encontrada');const name=z.string().trim().min(2).max(30).parse(form.get('name'));const type=z.enum(['income','expense']).parse(form.get('type'));const icon=categoryIcon.parse(form.get('icon')||'wallet');const newImage=await saveCategoryImage(form.get('image'),userId);const removeImage=form.get('removeImage')==='true';await db.update(categories).set({name,type,icon,imagePath:newImage??(removeImage?null:existing[0].imagePath)}).where(and(eq(categories.id,safeId),eq(categories.userId,userId)));if((newImage||removeImage)&&existing[0].imagePath)await removeCategoryImage(existing[0].imagePath);revalidatePath('/')}
-export async function deleteCategory(id:number){const userId=await getUserId();const safeId=z.number().int().positive().parse(id);const existing=await db.select().from(categories).where(and(eq(categories.id,safeId),eq(categories.userId,userId))).limit(1);if(!existing[0])throw new Error('Categoria não encontrada');await db.update(transactions).set({categoryId:null}).where(and(eq(transactions.categoryId,safeId),eq(transactions.userId,userId)));await db.delete(categories).where(and(eq(categories.id,safeId),eq(categories.userId,userId)));await removeCategoryImage(existing[0].imagePath);revalidatePath('/')}
+async function removeTransactionImage(imagePath:string|null,userId:string){await removeImage(imagePath,userId)}
+export async function updateCategory(id:number,form:FormData){const userId=await getUserId();const safeId=z.number().int().positive().parse(id);const existing=await db.select().from(categories).where(and(eq(categories.id,safeId),eq(categories.userId,userId))).limit(1);if(!existing[0])throw new Error('Categoria não encontrada');const name=z.string().trim().min(2).max(30).parse(form.get('name'));const type=z.enum(['income','expense']).parse(form.get('type'));const icon=categoryIcon.parse(form.get('icon')||'wallet');const newImage=await saveCategoryImage(form.get('image'),userId);const removeImage=form.get('removeImage')==='true';await db.update(categories).set({name,type,icon,imagePath:newImage??(removeImage?null:existing[0].imagePath)}).where(and(eq(categories.id,safeId),eq(categories.userId,userId)));if((newImage||removeImage)&&existing[0].imagePath)await removeCategoryImage(existing[0].imagePath,userId);revalidatePath('/')}
+export async function deleteCategory(id:number){const userId=await getUserId();const safeId=z.number().int().positive().parse(id);const existing=await db.select().from(categories).where(and(eq(categories.id,safeId),eq(categories.userId,userId))).limit(1);if(!existing[0])throw new Error('Categoria não encontrada');await db.update(transactions).set({categoryId:null}).where(and(eq(transactions.categoryId,safeId),eq(transactions.userId,userId)));await db.delete(categories).where(and(eq(categories.id,safeId),eq(categories.userId,userId)));await removeCategoryImage(existing[0].imagePath,userId);revalidatePath('/')}
 
 const importedTransaction=z.object({description:z.string().trim().min(2).max(80),type:z.enum(['income','expense']),date,amountCents:z.number().int().safe().positive(),categoryName:z.string().trim().max(30).optional()})
 export async function importTransactions(input:unknown){
