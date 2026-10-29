@@ -1,0 +1,11 @@
+# Atualização do app local a partir da main. Disparado pelo clareza-update.timer.
+# Instalação: veja "Atualização automática" no README.
+[Unit]
+Description=Atualização do Clareza a partir da main
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/controle-financeiro
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/opt/controle-financeiro/deploy/update-app.sh

@@ -1,0 +1,10 @@
+# Atualiza o app todo dia às 03:30, depois do backup das 03:00.
+[Unit]
+Description=Atualização diária do Clareza
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
