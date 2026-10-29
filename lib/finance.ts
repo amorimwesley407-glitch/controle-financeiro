@@ -136,3 +136,52 @@ export function getCategoryComparison(transactions: ComparisonTx[], selectedMont
     totalPrevious: rows.reduce((sum, row) => sum + row.previous, 0),
   }
 }
+
+type FixedTx = { type: string; amountCents: number; date: string; description: string; recurring?: boolean; categoryName?: string }
+
+const descriptionKey = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
+
+/**
+ * Despesas que se repetem todo mês, olhando os últimos `months` meses até `currentDate`.
+ * Entra quando a mesma descrição aparece em pelo menos 3 meses com valor estável (variação de até 15%),
+ * ou quando foi cadastrada como recorrente e aparece em pelo menos 2 meses. O valor mensal é o mais recente.
+ * Fica de fora o que não aparece nem no mês atual nem no anterior (provavelmente foi cancelado).
+ */
+export function getFixedExpenses(transactions: FixedTx[], currentDate: string, months = 6) {
+  const [year, month] = currentDate.slice(0, 7).split('-').map(Number)
+  const firstMonth = new Date(Date.UTC(year, month - months, 1)).toISOString().slice(0, 7)
+  const previousMonth = new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 7)
+  const inWindow = transactions.filter(item => item.date <= currentDate && item.date.slice(0, 7) >= firstMonth)
+
+  const groups = new Map<string, FixedTx[]>()
+  for (const item of inWindow) {
+    if (item.type !== 'expense') continue
+    const key = descriptionKey(item.description)
+    groups.set(key, [...(groups.get(key) ?? []), item])
+  }
+
+  const items = [...groups.values()].flatMap(group => {
+    const sorted = [...group].sort((a, b) => a.date.localeCompare(b.date))
+    const monthsSeen = new Set(sorted.map(item => item.date.slice(0, 7))).size
+    const amounts = sorted.map(item => item.amountCents).sort((a, b) => a - b)
+    const median = amounts[Math.floor(amounts.length / 2)]
+    const stable = median > 0 && (amounts.at(-1)! - amounts[0]) / median <= 0.15
+    const recurring = sorted.some(item => item.recurring)
+    const last = sorted.at(-1)!
+    if (!((monthsSeen >= 3 && stable) || (recurring && monthsSeen >= 2)) || last.date.slice(0, 7) < previousMonth) return []
+    return [{
+      description: last.description,
+      categoryName: last.categoryName,
+      monthlyCents: last.amountCents,
+      months: monthsSeen,
+      lastDate: last.date,
+      paidThisMonth: last.date.startsWith(currentDate.slice(0, 7)),
+    }]
+  }).sort((a, b) => b.monthlyCents - a.monthlyCents || a.description.localeCompare(b.description, 'pt-BR'))
+
+  const incomeByMonth = new Map<string, number>()
+  for (const item of inWindow) if (item.type === 'income') incomeByMonth.set(item.date.slice(0, 7), (incomeByMonth.get(item.date.slice(0, 7)) ?? 0) + item.amountCents)
+  const averageIncome = incomeByMonth.size ? [...incomeByMonth.values()].reduce((sum, value) => sum + value, 0) / incomeByMonth.size : 0
+  const totalCents = items.reduce((sum, item) => sum + item.monthlyCents, 0)
+  return { items, totalCents, averageIncomeCents: Math.round(averageIncome), shareOfIncome: averageIncome ? Math.round((totalCents / averageIncome) * 100) : null }
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compoundProjection, getBudgetAlerts, getCategoryComparison, getHoldingPerformance, getMonthlyForecast, getSpendingAlerts } from './finance'
+import { compoundProjection, getBudgetAlerts, getCategoryComparison, getFixedExpenses, getHoldingPerformance, getMonthlyForecast, getSpendingAlerts } from './finance'
 
 const categories = [{ id: 1, name: 'Mercado' }, { id: 2, name: 'Lazer' }]
 const tx = (over: Partial<Parameters<typeof getBudgetAlerts>[0][number]>) => ({
@@ -161,5 +161,45 @@ describe('getCategoryComparison', () => {
     const result = getCategoryComparison([item('2025-12-03', 1000), item('2026-01-03', 1500)], '2026-01', '2026-03-01')
     expect(result.previousMonth).toBe('2025-12')
     expect(result.rows).toEqual([{ name: 'Sem categoria', current: 1500, previous: 1000, difference: 500, percentage: 50 }])
+  })
+})
+
+describe('getFixedExpenses', () => {
+  const expense = (description: string, date: string, amountCents: number, extra = {}) => ({ type: 'expense', description, date, amountCents, ...extra })
+  const monthly = (description: string, amountCents: number, monthsList: string[], day = '05') => monthsList.map(month => expense(description, `${month}-${day}`, amountCents))
+
+  it('acha despesas que se repetem com valor estável e soma por mês', () => {
+    const result = getFixedExpenses([
+      ...monthly('WellHub', 9170, ['2026-07', '2026-08', '2026-09', '2026-10'], '01'),
+      ...monthly('internet', 5000, ['2026-08', '2026-09'], '10'), expense('Internet ', '2026-10-10', 5200, { categoryName: 'Moradia' }),
+      ...monthly('Fatura', 30000, ['2026-08', '2026-09']), expense('Fatura', '2026-10-05', 68000),
+      ...monthly('Mercado', 15000, ['2026-08', '2026-10']),
+      expense('Salário', '2026-10-05', 200000, { type: 'income' }), expense('Salário', '2026-09-05', 200000, { type: 'income' }),
+    ], '2026-10-29')
+    expect(result.items).toEqual([
+      { description: 'WellHub', categoryName: undefined, monthlyCents: 9170, months: 4, lastDate: '2026-10-01', paidThisMonth: true },
+      { description: 'Internet ', categoryName: 'Moradia', monthlyCents: 5200, months: 3, lastDate: '2026-10-10', paidThisMonth: true },
+    ])
+    expect(result.totalCents).toBe(14370)
+    expect(result.averageIncomeCents).toBe(200000)
+    expect(result.shareOfIncome).toBe(7)
+  })
+
+  it('deixa de fora o que parou de aparecer e marca o que ainda não caiu no mês', () => {
+    const result = getFixedExpenses([
+      ...monthly('Streaming', 3990, ['2026-05', '2026-06', '2026-07']),
+      ...monthly('Barbeiro', 4000, ['2026-07', '2026-08', '2026-09']),
+    ], '2026-10-29')
+    expect(result.items.map(item => [item.description, item.paidThisMonth])).toEqual([['Barbeiro', false]])
+  })
+
+  it('aceita recorrente marcado com 2 meses, ignora lançamentos futuros e meses fora da janela', () => {
+    const result = getFixedExpenses([
+      expense('Academia', '2026-09-03', 12000, { recurring: true }), expense('Academia', '2026-10-03', 12000, { recurring: true }),
+      expense('Academia', '2026-11-03', 12000, { recurring: true }),
+      ...monthly('Antigo', 1000, ['2026-01', '2026-02', '2026-03', '2026-04']),
+    ], '2026-10-29')
+    expect(result.items.map(item => [item.description, item.months])).toEqual([['Academia', 2]])
+    expect(result.shareOfIncome).toBeNull()
   })
 })
