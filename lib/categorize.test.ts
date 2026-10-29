@@ -18,6 +18,10 @@ describe('suggestCategory', () => {
     ['Bolsa presente mãe', 'expense', 'Presentes'],
     ['Dias das mães', 'expense', 'Presentes'],
     ['Rifa-filha-joilma', 'expense', 'Presentes'],
+    ['Tay', 'expense', 'Presentes'],
+    ['Fatura', 'expense', 'Cartão de crédito'],
+    ['Seguro do Cartão', 'expense', 'Cartão de crédito'],
+    ['Seguro do carro', 'expense', 'Transporte'],
     ['Meli +', 'expense', 'Compras'],
     ['Barbeiro', 'expense', 'Cuidados pessoais'],
     ['Corte de cabelo', 'expense', 'Cuidados pessoais'],
@@ -32,10 +36,9 @@ describe('suggestCategory', () => {
     expect(suggestCategory(description, type)).toBe(expected)
   })
 
-  it('não categoriza pagamentos do cartão nem descrições desconhecidas', () => {
-    expect(suggestCategory('Fatura', 'expense')).toBeUndefined()
-    expect(suggestCategory('Seguro do cartão', 'expense')).toBeUndefined()
-    expect(suggestCategory('Tay', 'expense')).toBeUndefined()
+  it('não categoriza descrições desconhecidas', () => {
+    expect(suggestCategory('Pix diversos', 'expense')).toBeUndefined()
+    expect(suggestCategory('Taylor', 'expense')).toBeUndefined()
   })
 
   it('respeita o tipo do lançamento', () => {
