@@ -1,5 +1,4 @@
 "use client";
-/* eslint-disable @typescript-eslint/no-unused-vars */
 
 import { Area, AreaChart, CartesianGrid, Pie, PieChart, XAxis, YAxis } from "recharts";
 import { ArrowDownRight, ArrowUpRight, Lightbulb, Target, TrendingUp, WalletCards } from "lucide-react";
@@ -7,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Progress } from "@/components/ui/progress";
-import { Budget, Category, Empty, GoalType, Holding, Metric, Tx, brl, chartConfig } from "@/components/finance/shared";
+import { Empty, Holding, Metric, brl, chartConfig } from "@/components/finance/shared";
 
 export function DashboardView({
   income,
@@ -16,12 +15,7 @@ export function DashboardView({
   savings,
   flow,
   byCategory,
-  transactions,
-  categories,
-  goals,
-  budgets,
   holdings,
-  currentDate,
 }: {
   income: number;
   expense: number;
@@ -29,12 +23,7 @@ export function DashboardView({
   savings: number;
   flow: { month: string; receitas: number; despesas: number; saldo: number }[];
   byCategory: { name: string; value: number; fill: string }[];
-  transactions: Tx[];
-  categories: Category[];
-  goals: GoalType[];
-  budgets: Budget[];
   holdings: Holding[];
-  currentDate: string;
 }) {
   const current = flow.at(-1) ?? {
     receitas: 0,
@@ -289,7 +278,7 @@ export function DashboardView({
                   </PieChart>
                 </ChartContainer>
                 <div className="mt-2 flex flex-col gap-3">
-                  {ranked.slice(0, 3).map((item, index) => (
+                  {ranked.slice(0, 3).map((item) => (
                     <div
                       key={item.name}
                       className="flex items-center justify-between gap-3 text-sm"

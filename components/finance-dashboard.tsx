@@ -319,12 +319,7 @@ export function FinanceDashboard({
                 savings={savings}
                 flow={flow}
                 byCategory={byCategory}
-                transactions={transactions}
-                categories={categories}
-                goals={goals}
-                budgets={budgets}
                 holdings={holdings}
-                currentDate={currentDate}
               />
               <div className="grid items-stretch gap-6 xl:grid-cols-[minmax(300px,1fr)_minmax(0,2fr)]">
                 <GoalsFeatureCard goals={goals} />
