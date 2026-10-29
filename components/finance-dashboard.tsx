@@ -17,6 +17,7 @@ import { CategoriesView } from "@/components/finance/categories-view";
 import { InvestmentsView } from "@/components/finance/investments-view";
 import { InvestmentGuideView } from "@/components/finance/investment-guide-view";
 import { PlanningView } from "@/components/finance/planning-view";
+import { FixedExpensesCard } from "@/components/finance/fixed-expenses";
 import { ToolsView } from "@/components/finance/tools-view";
 import { ReportsView } from "@/components/finance/reports-view";
 import { DashboardView, Insights } from "@/components/finance/dashboard-view";
@@ -370,6 +371,7 @@ export function FinanceDashboard({
           {view === "planning" && (
             <div className="flex flex-col gap-6">
               <FinancialGoalsOrbit goals={goals} />
+              <FixedExpensesCard transactions={transactions} currentDate={currentDate} />
               <PlanningView
                 goals={goals}
                 budgets={budgets}
