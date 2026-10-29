@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { suggestCategory } from './categorize'
+import { findSuggestedCategory, suggestCategory } from './categorize'
 
 describe('suggestCategory', () => {
   it.each([
@@ -19,6 +19,9 @@ describe('suggestCategory', () => {
     ['Dias das mães', 'expense', 'Presentes'],
     ['Rifa-filha-joilma', 'expense', 'Presentes'],
     ['Meli +', 'expense', 'Compras'],
+    ['Barbeiro', 'expense', 'Cuidados pessoais'],
+    ['Corte de cabelo', 'expense', 'Cuidados pessoais'],
+    ['Perfume Touti', 'expense', 'Cuidados pessoais'],
     ['Ração Bolinha', 'expense', 'Compras'],
     ['Cabo flat PS4', 'expense', 'Lazer'],
     ['Salário', 'income', 'Salário'],
@@ -43,5 +46,23 @@ describe('suggestCategory', () => {
   it('não confunde palavras parecidas', () => {
     expect(suggestCategory('Macarrão', 'expense')).toBeUndefined()
     expect(suggestCategory('Claridade', 'expense')).toBeUndefined()
+  })
+})
+
+describe('findSuggestedCategory', () => {
+  const categories = [
+    { id: 1, name: 'Transporte', type: 'expense' },
+    { id: 2, name: 'Compras', type: 'expense' },
+    { id: 3, name: 'salário', type: 'income' },
+  ]
+
+  it('devolve a categoria do usuário correspondente à regra', () => {
+    expect(findSuggestedCategory('Uber', 'expense', categories)?.id).toBe(1)
+    expect(findSuggestedCategory('Salário', 'income', categories)?.id).toBe(3)
+  })
+
+  it('não sugere nada quando o usuário não tem a categoria da regra', () => {
+    expect(findSuggestedCategory('Barbeiro', 'expense', categories)).toBeUndefined()
+    expect(findSuggestedCategory('iFood', 'expense', categories)).toBeUndefined()
   })
 })

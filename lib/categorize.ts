@@ -14,11 +14,25 @@ export const CATEGORY_RULES: Rule[] = [
   { type: 'expense', category: 'Moradia', pattern: /\b(internet|claro|vivo|aluguel|areia|arreia|luz|agua)\b/ },
   { type: 'expense', category: 'Alimentação', pattern: /\b(ifood|pizza|mac|mcdonalds|cocada|sorvete|barras?[\s-]cereal|churras|marmita|misto ?quente|bolo|padaria|almoco|jantar|creme e tridente|mercado)\b/ },
   { type: 'expense', category: 'Lazer', pattern: /\b(role|ps4|ps5|cinema)\b/ },
-  { type: 'expense', category: 'Compras', pattern: /\b(meli|perfume|roupas?|shopp?e|shopee|fonte do pc|racao|corte de cabelo|barbeiro|travesseiro)\b/ },
+  { type: 'expense', category: 'Cuidados pessoais', pattern: /\b(barbeiro|barbearia|corte de cabelo|cabeleireiro|manicure|perfume)\b/ },
+  { type: 'expense', category: 'Compras', pattern: /\b(meli|roupas?|shopp?e|shopee|fonte do pc|racao|travesseiro)\b/ },
 ]
 
 /** Nome da categoria sugerida para a descrição, ou undefined quando nenhuma regra se aplica. */
 export function suggestCategory(description: string, type: string) {
   const text = normalize(description)
   return CATEGORY_RULES.find(rule => rule.type === type && rule.pattern.test(text))?.category
+}
+
+type CategoryLike = { name: string; type: string }
+
+/** Categoria do usuário sugerida pelas regras. Pula regras cuja categoria o usuário não tem. */
+export function findSuggestedCategory<T extends CategoryLike>(description: string, type: string, categories: T[]) {
+  const text = normalize(description)
+  for (const rule of CATEGORY_RULES) {
+    if (rule.type !== type || !rule.pattern.test(text)) continue
+    const match = categories.find(item => item.type === type && normalize(item.name) === normalize(rule.category))
+    if (match) return match
+  }
+  return undefined
 }

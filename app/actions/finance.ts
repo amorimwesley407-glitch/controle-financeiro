@@ -7,6 +7,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { budgets, categories, goals, holdings, transactions, user as users } from '@/lib/db/schema'
 import { findMissingCategories, matchCategory, MAX_NEW_CATEGORIES_PER_IMPORT } from '@/lib/import'
+import { findSuggestedCategory } from '@/lib/categorize'
 import { parseMoneyToCents } from '@/lib/money'
 import { removeImage, uploadImage } from '@/lib/storage'
 import { z } from 'zod'
@@ -50,6 +51,9 @@ export async function addTransaction(form: FormData) {
   if (parsed.categoryId) {
     const category = await db.select({ id: categories.id, type: categories.type }).from(categories).where(and(eq(categories.id, parsed.categoryId), eq(categories.userId, userId))).limit(1)
     if (!category[0] || category[0].type !== parsed.type) throw new Error('Categoria inválida para este lançamento')
+  } else {
+    const userCategories = await db.select({ id: categories.id, name: categories.name, type: categories.type }).from(categories).where(eq(categories.userId, userId))
+    parsed.categoryId = findSuggestedCategory(parsed.description, parsed.type, userCategories)?.id
   }
   const values=[];const [year,monthIndex,day]=parsed.date.split('-').map(Number);let offset=0
   do {const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(recurrenceEnd&&occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId:parsed.categoryId,recurring});offset++;if(offset>120)throw new Error('O período recorrente deve ter no máximo 120 meses')}while(recurrenceEnd)
@@ -99,7 +103,7 @@ export async function importTransactions(input:unknown){
     await db.insert(categories).values(missing.map(item=>({userId,name:item.name,type:item.type}))).onConflictDoNothing()
     userCategories=await db.select().from(categories).where(eq(categories.userId,userId))
   }
-  const values=rows.map(row=>({userId,description:row.description,type:row.type,date:row.date,amountCents:row.amountCents,categoryId:matchCategory(row,userCategories)?.id??null}))
+  const values=rows.map(row=>({userId,description:row.description,type:row.type,date:row.date,amountCents:row.amountCents,categoryId:(matchCategory(row,userCategories)??(row.categoryName?.trim()?undefined:findSuggestedCategory(row.description,row.type,userCategories)))?.id??null}))
   await db.insert(transactions).values(values)
   revalidatePath('/')
   return{count:values.length,newCategories:missing.length}
