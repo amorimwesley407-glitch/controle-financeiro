@@ -13,6 +13,7 @@ export const defaultCategories = [
   { name: 'Compras', type: 'expense', color: 'orange', icon: 'shopping' },
   { name: 'Presentes', type: 'expense', color: 'pink', icon: 'gift' },
   { name: 'Cuidados pessoais', type: 'expense', color: 'pink', icon: 'barber' },
+  { name: 'Cartão de crédito', type: 'expense', color: 'red', icon: 'bill' },
 ]
 
 export async function createDefaultCategories(userId: string) {

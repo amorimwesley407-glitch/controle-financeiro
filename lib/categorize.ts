@@ -4,11 +4,11 @@ const normalize = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, ''
 type Rule = { type: 'expense' | 'income'; category: string; pattern: RegExp }
 
 // A ordem importa: a primeira regra que casar define a categoria.
-// "fatura" e "seguro do cartão" ficam de fora de propósito: são pagamentos do cartão, não um tipo de gasto.
 export const CATEGORY_RULES: Rule[] = [
   { type: 'income', category: 'Salário', pattern: /\bsalario\b/ },
   { type: 'income', category: 'Renda extra', pattern: /\bvale[\s-]?transporte\b/ },
-  { type: 'expense', category: 'Presentes', pattern: /\b(doacao|presente|dia?s? das maes|rifa)\b/ },
+  { type: 'expense', category: 'Presentes', pattern: /\b(doacao|presente|dia?s? das maes|rifa|tay)\b/ },
+  { type: 'expense', category: 'Cartão de crédito', pattern: /\b(fatura|seguro do cartao|anuidade)\b/ },
   { type: 'expense', category: 'Transporte', pattern: /\b(g(a)?solina|combustivel|shell|uber|99|seguro do carro|insulfilme|amortecedor)\b/ },
   { type: 'expense', category: 'Saúde', pattern: /\b(wellhub|gympass|farmacia|soro|seringa|consulta|exame|whey)\b/ },
   { type: 'expense', category: 'Moradia', pattern: /\b(internet|claro|vivo|aluguel|areia|arreia|luz|agua)\b/ },
