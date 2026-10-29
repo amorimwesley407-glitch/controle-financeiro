@@ -19,7 +19,7 @@ export default async function Page(){
  const current=await auth.api.getSession({headers:await headers()});if(!current?.user)redirect('/sign-in');const userId=current.user.id
  const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())
  const [tx,rawCats,userGoals,userBudgets,userHoldings]=await Promise.all([db.select().from(transactions).where(eq(transactions.userId,userId)).orderBy(desc(transactions.date)),getUserCategories(userId),db.select().from(goals).where(eq(goals.userId,userId)),db.select().from(budgets).where(eq(budgets.userId,userId)),db.select().from(holdings).where(eq(holdings.userId,userId))])
- const imageUrls=await signImageUrls([current.user.image,...rawCats.map(item=>item.imagePath),...tx.map(item=>item.imagePath)])
+ const imageUrls=await signImageUrls([current.user.image,...rawCats.map(item=>item.imagePath),...tx.map(item=>item.imagePath)],current.user.id)
  const cats=rawCats.map(item=>({...item,imagePath:item.imagePath?imageUrls.get(item.imagePath)??null:null}))
  const enrichedTransactions=tx.map(item=>{const category=cats.find(entry=>entry.id===item.categoryId);return {...item,imagePath:item.imagePath?imageUrls.get(item.imagePath)??null:null,categoryName:category?.name,categoryIcon:category?.icon,categoryImage:category?.imagePath}})
  return <FinanceDashboard currentDate={today} user={{name:current.user.name,email:current.user.email,image:current.user.image?imageUrls.get(current.user.image)??null:null}} transactions={enrichedTransactions} categories={cats} goals={userGoals} budgets={userBudgets} holdings={userHoldings}/>

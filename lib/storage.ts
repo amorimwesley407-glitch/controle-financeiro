@@ -33,27 +33,40 @@ function objectPathFromValue(value: string | null | undefined) {
   if (value.startsWith(storagePrefix)) return value.slice(storagePrefix.length)
   const marker = `/storage/v1/object/public/${bucket}/`
   const index = value.indexOf(marker)
-  return index < 0 ? null : decodeURIComponent(value.slice(index + marker.length))
+  return index < 0 ? null : value.slice(index + marker.length)
 }
 
-export async function signImageUrls(values: Array<string | null | undefined>) {
-  const paths = [...new Set(values.map(objectPathFromValue).filter((value): value is string => Boolean(value)))]
+// Só o formato gerado por uploadImage: <userId>/<pasta>/<uuid>.<ext>, sem "..", "%" ou barras extras.
+const ownedPath = /^([A-Za-z0-9_-]+)\/(profile-images|category-icons|transaction-images)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp|avif)$/
+
+/** Caminho do objeto no Storage, só se ele estiver na pasta de `userId`. Qualquer outra coisa vira null. */
+export function ownedObjectPath(value: string | null | undefined, userId: string) {
+  const path = objectPathFromValue(value)
+  const match = path ? ownedPath.exec(path) : null
+  return match && userId && match[1] === userId ? path : null
+}
+
+/**
+ * Gera links temporários só para imagens que pertencem a `userId`.
+ * Valores de outro usuário ou em formato desconhecido ficam sem imagem.
+ */
+export async function signImageUrls(values: Array<string | null | undefined>, userId: string) {
+  const paths = [...new Set(values.map(value => ownedObjectPath(value, userId)).filter((value): value is string => Boolean(value)))]
   const signed = new Map<string, string>()
   if (!paths.length) return signed
   const { data, error } = await storage().from(bucket).createSignedUrls(paths, 60 * 60)
   if (error) throw new Error(`Falha ao proteger imagens: ${error.message}`)
   data.forEach((item, index) => { if (item.signedUrl) signed.set(paths[index], item.signedUrl) })
   return new Map(values.flatMap(value => {
-    const path = objectPathFromValue(value)
-    if (!value) return []
-    if (!path) return [[value, value] as const] // compatibilidade com arquivos estáticos locais
-    const url = signed.get(path)
-    return url ? [[value, url] as const] : []
+    const path = ownedObjectPath(value, userId)
+    const url = path && signed.get(path)
+    return value && url ? [[value, url] as const] : []
   }))
 }
 
-export async function removeImage(value: string | null | undefined) {
-  const objectPath = objectPathFromValue(value)
+/** Apaga a imagem do Storage, só se ela estiver na pasta de `userId`; caso contrário não faz nada. */
+export async function removeImage(value: string | null | undefined, userId: string) {
+  const objectPath = ownedObjectPath(value, userId)
   if (!objectPath) return
   const { error } = await storage().from(bucket).remove([objectPath])
   if (error) throw new Error(`Falha ao remover imagem: ${error.message}`)

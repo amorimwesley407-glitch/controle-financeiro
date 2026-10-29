@@ -5,6 +5,7 @@ import * as schema from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { removeImage } from '@/lib/storage'
 import { createDefaultCategories } from '@/lib/default-categories'
+import { blockAuthImageInput } from '@/lib/auth-image-policy'
 
 const toOrigin = (host: string | undefined) => {
   if (!host) return null
@@ -31,6 +32,7 @@ export const auth = betterAuth({
     ...(configuredAuthOrigin ? [configuredAuthOrigin] : []),
     ...vercelOrigins,
   ],
+  hooks: { before: blockAuthImageInput },
   emailAndPassword: { enabled: true, autoSignIn: true, minPasswordLength: 12, maxPasswordLength: 128 },
   rateLimit: {
     enabled: true,
@@ -51,9 +53,9 @@ export const auth = betterAuth({
           db.select({ imagePath: schema.transactions.imagePath }).from(schema.transactions).where(eq(schema.transactions.userId, user.id)),
         ])
         await Promise.all([
-          ...userCategories.map((item) => removeImage(item.imagePath)),
-          ...userTransactions.map((item) => removeImage(item.imagePath)),
-          removeImage(user.image),
+          ...userCategories.map((item) => removeImage(item.imagePath, user.id)),
+          ...userTransactions.map((item) => removeImage(item.imagePath, user.id)),
+          removeImage(user.image, user.id),
         ])
         await db.delete(schema.transactions).where(eq(schema.transactions.userId, user.id))
         await db.delete(schema.budgets).where(eq(schema.budgets.userId, user.id))
