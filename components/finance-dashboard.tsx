@@ -4,7 +4,13 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
-import { getBudgetAlerts } from "@/lib/finance";
+import {
+  compoundProjection,
+  getBudgetAlerts,
+  getHoldingPerformance,
+  getMonthlyForecast,
+  getSpendingAlerts,
+} from "@/lib/finance";
 import Image from "next/image";
 import {
   Area,
@@ -977,7 +983,6 @@ export function FinanceDashboard({
   function navigate(next: View) {
     setView(next);
     setMobile(false);
-    setSidebarVisible(false);
   }
   async function logout() {
     await authClient.signOut();
@@ -2284,38 +2289,15 @@ function ForecastCard({
 }) {
   const currentMonth = currentDate.slice(0, 7);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
-  const monthTransactions = transactions.filter((item) =>
-    item.date.startsWith(selectedMonth),
-  );
-  const isCurrentMonth = selectedMonth === currentMonth;
-  const isFutureMonth = selectedMonth > currentMonth;
-  const futureTransactions = monthTransactions.filter(
-    (item) => isFutureMonth || (isCurrentMonth && item.date > currentDate),
-  );
-  const realizedIncome = monthTransactions
-    .filter(
-      (item) =>
-        item.type === "income" &&
-        !isFutureMonth &&
-        (!isCurrentMonth || item.date <= currentDate),
-    )
-    .reduce((sum, item) => sum + item.amountCents, 0);
-  const realizedExpense = monthTransactions
-    .filter(
-      (item) =>
-        item.type === "expense" &&
-        !isFutureMonth &&
-        (!isCurrentMonth || item.date <= currentDate),
-    )
-    .reduce((sum, item) => sum + item.amountCents, 0);
-  const pendingIncome = futureTransactions
-    .filter((item) => item.type === "income")
-    .reduce((sum, item) => sum + item.amountCents, 0);
-  const pendingExpense = futureTransactions
-    .filter((item) => item.type === "expense")
-    .reduce((sum, item) => sum + item.amountCents, 0);
-  const projectedBalance =
-    realizedIncome - realizedExpense + pendingIncome - pendingExpense;
+  const {
+    isCurrentMonth,
+    isFutureMonth,
+    monthTransactions,
+    futureTransactions,
+    pendingIncome,
+    pendingExpense,
+    projectedBalance,
+  } = getMonthlyForecast(transactions, selectedMonth, currentDate);
   return (
     <Card className="border-cyan-400/15 bg-gradient-to-br from-card to-cyan-500/[.045]">
       <CardHeader className="flex-row items-start justify-between gap-4">
@@ -2393,37 +2375,12 @@ function ToolsView({
   const [monthly, setMonthly] = useState(500);
   const [rate, setRate] = useState(10);
   const [years, setYears] = useState(5);
-  const months = Math.max(1, years * 12);
-  const monthlyRate = Math.pow(1 + rate / 100, 1 / 12) - 1;
-  const future = Math.round(
-    initial * Math.pow(1 + monthlyRate, months) +
-      monthly *
-        (monthlyRate
-          ? (Math.pow(1 + monthlyRate, months) - 1) / monthlyRate
-          : months),
-  );
+  const future = compoundProjection(initial, monthly, rate, years);
   const currentMonth = new Date().toISOString().slice(0, 7);
   const monthTransactions = transactions.filter((item) =>
     item.date.startsWith(currentMonth),
   );
-  const alerts: string[] = [];
-  if (income === 0)
-    alerts.push(
-      "Cadastre uma receita para acompanhar sua capacidade de pagamento.",
-    );
-  if (expense > income && income > 0)
-    alerts.push("Suas despesas acumuladas superaram as receitas.");
-  if (savings < 10 && income > 0)
-    alerts.push("Sua taxa de economia está abaixo de 10%.");
-  const largestExpense = [...transactions]
-    .filter((item) => item.type === "expense")
-    .sort((a, b) => b.amountCents - a.amountCents)[0];
-  if (largestExpense && income && largestExpense.amountCents > income * 0.3)
-    alerts.push(
-      `O lançamento “${largestExpense.description}” representa mais de 30% das receitas.`,
-    );
-  if (!alerts.length)
-    alerts.push("Nenhum alerta crítico identificado com os dados atuais.");
+  const alerts = getSpendingAlerts(transactions, income, expense, savings);
   return (
     <div className="grid gap-6 xl:grid-cols-2">
       <Card>
@@ -3294,7 +3251,6 @@ function HoldingFlipCard({
 }) {
   const [flipped, setFlipped] = useState(false);
   const quantity = Number(holding.quantity);
-  const invested = quantity * holding.averageCostCents;
   const fixedIncome = isFixedIncomeType(holding.assetType);
   const currentPriceCents = fixedIncome
     ? null
@@ -3303,9 +3259,11 @@ function HoldingFlipCard({
     : marketQuote
       ? Math.round(marketQuote.value * 100)
       : null;
-  const currentValue = currentPriceCents === null ? null : quantity * currentPriceCents;
-  const result = currentValue === null ? null : currentValue - invested;
-  const resultPercentage = invested && result !== null ? (result / invested) * 100 : null;
+  const { invested, result, resultPercentage } = getHoldingPerformance(
+    quantity,
+    holding.averageCostCents,
+    currentPriceCents,
+  );
   const typeLabel =
     holding.assetType === "stock"
       ? "Ação"
@@ -4203,12 +4161,13 @@ function TransactionTable({
   function exportCsv() {
     const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
     const lines = [
-      ["Descrição", "Data", "Tipo", "Valor"],
+      ["Descrição", "Data", "Tipo", "Valor", "Categoria"],
       ...rows.map((t) => [
         t.description,
         t.date,
         t.type === "income" ? "Receita" : "Despesa",
         (t.amountCents / 100).toFixed(2).replace(".", ","),
+        t.categoryName ?? "",
       ]),
     ].map((line) => line.map((value) => escape(String(value))).join(";"));
     const url = URL.createObjectURL(
@@ -4310,7 +4269,9 @@ function TransactionTable({
         };
       });
       const result = await importTransactions(parsed);
-      toast.success(`${result.count} transações importadas.`);
+      toast.success(
+        `${result.count} transações importadas${result.newCategories ? ` e ${result.newCategories} categoria${result.newCategories === 1 ? "" : "s"} criada${result.newCategories === 1 ? "" : "s"}` : ""}.`,
+      );
     } catch (error) {
       toast.error(
         error instanceof Error

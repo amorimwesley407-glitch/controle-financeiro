@@ -6,6 +6,7 @@ import { and, eq } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { budgets, categories, goals, holdings, transactions, user as users } from '@/lib/db/schema'
+import { findMissingCategories, matchCategory, MAX_NEW_CATEGORIES_PER_IMPORT } from '@/lib/import'
 import { parseMoneyToCents } from '@/lib/money'
 import { removeImage, uploadImage } from '@/lib/storage'
 import { z } from 'zod'
@@ -88,7 +89,21 @@ export async function updateCategory(id:number,form:FormData){const userId=await
 export async function deleteCategory(id:number){const userId=await getUserId();const safeId=z.number().int().positive().parse(id);const existing=await db.select().from(categories).where(and(eq(categories.id,safeId),eq(categories.userId,userId))).limit(1);if(!existing[0])throw new Error('Categoria não encontrada');await db.update(transactions).set({categoryId:null}).where(and(eq(transactions.categoryId,safeId),eq(transactions.userId,userId)));await db.delete(categories).where(and(eq(categories.id,safeId),eq(categories.userId,userId)));await removeCategoryImage(existing[0].imagePath);revalidatePath('/')}
 
 const importedTransaction=z.object({description:z.string().trim().min(2).max(80),type:z.enum(['income','expense']),date,amountCents:z.number().int().safe().positive(),categoryName:z.string().trim().max(30).optional()})
-export async function importTransactions(input:unknown){const userId=await getUserId();const rows=z.array(importedTransaction).min(1).max(1000).parse(input);const userCategories=await db.select().from(categories).where(eq(categories.userId,userId));const values=rows.map(row=>{const category=userCategories.find(item=>item.type===row.type&&item.name.toLocaleLowerCase('pt-BR')===row.categoryName?.toLocaleLowerCase('pt-BR'));return{userId,description:row.description,type:row.type,date:row.date,amountCents:row.amountCents,categoryId:category?.id??null}});await db.insert(transactions).values(values);revalidatePath('/');return{count:values.length}}
+export async function importTransactions(input:unknown){
+  const userId=await getUserId()
+  const rows=z.array(importedTransaction).min(1).max(1000).parse(input)
+  let userCategories=await db.select().from(categories).where(eq(categories.userId,userId))
+  const missing=findMissingCategories(rows,userCategories)
+  if(missing.length>MAX_NEW_CATEGORIES_PER_IMPORT)throw new Error(`O arquivo cria ${missing.length} categorias novas (máximo ${MAX_NEW_CATEGORIES_PER_IMPORT}). Verifique a coluna Categoria.`)
+  if(missing.length){
+    await db.insert(categories).values(missing.map(item=>({userId,name:item.name,type:item.type}))).onConflictDoNothing()
+    userCategories=await db.select().from(categories).where(eq(categories.userId,userId))
+  }
+  const values=rows.map(row=>({userId,description:row.description,type:row.type,date:row.date,amountCents:row.amountCents,categoryId:matchCategory(row,userCategories)?.id??null}))
+  await db.insert(transactions).values(values)
+  revalidatePath('/')
+  return{count:values.length,newCategories:missing.length}
+}
 export async function addGoal(form: FormData) { const userId = await getUserId(); const parsed = z.object({name:z.string().trim().min(2).max(50),target:money,current:nonNegativeMoney,deadline:z.union([date,z.literal('')])}).parse({name:form.get('name'),target:form.get('target'),current:form.get('current'),deadline:textValue(form.get('deadline'))}); if(parsed.current>parsed.target) throw new Error('O valor atual não pode superar o objetivo'); await db.insert(goals).values({ userId, name:parsed.name, targetCents:parsed.target, currentCents:parsed.current, deadline:parsed.deadline || null }); revalidatePath('/') }
 export async function addBudget(form: FormData) { const userId = await getUserId(); const parsed=z.object({name:z.string().trim().min(2).max(50),limit:money,month,categoryId:z.coerce.number().int().positive()}).parse({name:form.get('name'),limit:form.get('limit'),month:form.get('month'),categoryId:form.get('categoryId')});const category=await db.select({id:categories.id,type:categories.type}).from(categories).where(and(eq(categories.id,parsed.categoryId),eq(categories.userId,userId))).limit(1);if(!category[0]||category[0].type!=='expense')throw new Error('Selecione uma categoria de despesa válida'); await db.insert(budgets).values({ userId, name:parsed.name, limitCents:parsed.limit, month:parsed.month,categoryId:parsed.categoryId }); revalidatePath('/') }
 export async function updateGoal(id:number,form:FormData){const userId=await getUserId();const safeId=z.number().int().positive().parse(id);const parsed=z.object({name:z.string().trim().min(2).max(50),target:money,current:nonNegativeMoney,deadline:z.union([date,z.literal('')])}).parse({name:form.get('name'),target:form.get('target'),current:form.get('current'),deadline:textValue(form.get('deadline'))});if(parsed.current>parsed.target)throw new Error('O valor atual não pode superar o objetivo');const result=await db.update(goals).set({name:parsed.name,targetCents:parsed.target,currentCents:parsed.current,deadline:parsed.deadline||null}).where(and(eq(goals.id,safeId),eq(goals.userId,userId))).returning({id:goals.id});if(!result.length)throw new Error('Meta não encontrada');revalidatePath('/')}
