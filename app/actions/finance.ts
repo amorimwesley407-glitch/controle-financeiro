@@ -6,7 +6,7 @@ import { and, between, eq, or } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { budgets, categories, financialAccounts, goals, holdings, transactions, transfers, user as users } from '@/lib/db/schema'
-import { addMonthsToDate, splitInstallments } from '@/lib/accounts'
+import { getInstallmentDates, splitInstallments } from '@/lib/accounts'
 import { findMissingCategories, matchCategory, MAX_NEW_CATEGORIES_PER_IMPORT, skipExistingTransactions } from '@/lib/import'
 import { findSuggestedCategory } from '@/lib/categorize'
 import { parseMoneyToCents } from '@/lib/money'
@@ -60,11 +60,12 @@ export async function addTransaction(form: FormData) {
   const accountId = account?.id ?? null
   const installments = z.coerce.number().int().min(1).max(48).parse(form.get('installments') || 1)
   if (installments > 1) {
-    if (parsed.type !== 'expense' || account?.kind !== 'credit_card') throw new Error('Parcelas só valem para despesas em um cartão de crédito')
+    if (parsed.type !== 'expense' || account?.kind !== 'credit_card' || account.closingDay === null) throw new Error('Parcelas só valem para despesas em um cartão de crédito')
     if (recurring) throw new Error('Um lançamento não pode ser parcelado e recorrente ao mesmo tempo')
     if (parsed.amount < installments) throw new Error('O valor é pequeno demais para esse número de parcelas')
     const installmentGroup = crypto.randomUUID()
-    await db.insert(transactions).values(splitInstallments(parsed.amount, installments).map((amountCents, index) => ({ userId, description: parsed.description, type: parsed.type, date: addMonthsToDate(parsed.date, index), amountCents, categoryId: parsed.categoryId, accountId, installmentGroup, installmentNumber: index + 1, installmentTotal: installments })))
+    const dates = getInstallmentDates(parsed.date, installments, account.closingDay)
+    await db.insert(transactions).values(splitInstallments(parsed.amount, installments).map((amountCents, index) => ({ userId, description: parsed.description, type: parsed.type, date: dates[index], amountCents, categoryId: parsed.categoryId, accountId, installmentGroup, installmentNumber: index + 1, installmentTotal: installments })))
     revalidatePath('/')
     return
   }

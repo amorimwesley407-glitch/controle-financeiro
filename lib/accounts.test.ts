@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addMonthsToDate, getAccountBalance, getCardInvoices, getInvoiceClosingDate, getInvoiceDueDate, splitInstallments } from './accounts'
+import { addMonthsToDate, getAccountBalance, getCardInvoices, getInvoiceClosingDate, getInstallmentDates, getInvoiceDueDate, splitInstallments } from './accounts'
 
 const expense = (date: string, amountCents: number, accountId = 1) => ({ type: 'expense', amountCents, date, accountId })
 const income = (date: string, amountCents: number, accountId = 1) => ({ type: 'income', amountCents, date, accountId })
@@ -86,5 +86,26 @@ describe('getCardInvoices', () => {
   })
   it('ignora lançamentos de outras contas', () => {
     expect(getCardInvoices(card(), [expense('2026-08-05', 1000, 2)], [], '2026-10-30')).toEqual([])
+  })
+})
+
+describe('getInstallmentDates', () => {
+  it('mantém o mesmo dia quando não há conflito com o fechamento', () => {
+    expect(getInstallmentDates('2026-10-15', 3, 10)).toEqual(['2026-10-15', '2026-11-15', '2026-12-15'])
+  })
+  it('usa o último dia de meses curtos quando isso não muda a fatura', () => {
+    expect(getInstallmentDates('2027-01-31', 3, 5)).toEqual(['2027-01-31', '2027-02-28', '2027-03-31'])
+  })
+  it.each([
+    ['2027-01-31', 30], ['2027-01-31', 28], ['2027-01-30', 28], ['2027-01-29', 28], ['2026-12-31', 30], ['2027-12-31', 31],
+    ['2028-01-31', 29], ['2026-10-15', 10], ['2027-01-31', 5], ['2027-02-28', 28], ['2026-11-30', 31], ['2027-01-01', 1],
+  ])('compra em %s com fechamento no dia %i: uma parcela por fatura, sem pular nenhuma', (date, closingDay) => {
+    const dates = getInstallmentDates(date as string, 48, closingDay as number)
+    expect(dates[0]).toBe(date)
+    const closings = dates.map(item => getInvoiceClosingDate(item, closingDay as number))
+    expect(new Set(closings).size).toBe(48)
+    closings.slice(1).forEach((closing, index) => {
+      expect(closing.slice(0, 7)).toBe(addMonthsToDate(`${closings[index].slice(0, 7)}-01`, 1).slice(0, 7))
+    })
   })
 })

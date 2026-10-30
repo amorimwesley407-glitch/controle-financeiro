@@ -48,6 +48,22 @@ export function getInvoiceClosingDate(date: string, closingDay: number) {
   return date <= closing ? closing : dayInMonth(nextMonth(date.slice(0, 7)), closingDay)
 }
 
+/**
+ * Datas das parcelas: uma por mês a partir da compra, com exatamente uma em cada fatura seguida.
+ * Só ajusta a data quando o mês curto faria duas parcelas caírem na mesma fatura e nenhuma na seguinte.
+ */
+export function getInstallmentDates(date: string, count: number, closingDay: number) {
+  let closing = getInvoiceClosingDate(date, closingDay)
+  return Array.from({ length: count }, (_, index) => {
+    if (index === 0) return date
+    const previousClosing = closing
+    closing = dayInMonth(nextMonth(previousClosing.slice(0, 7)), closingDay)
+    const candidate = addMonthsToDate(date, index)
+    if (candidate <= previousClosing) return new Date(Date.parse(`${previousClosing}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
+    return candidate > closing ? closing : candidate
+  })
+}
+
 /** Vencimento da fatura. Se o dia de vencimento não vem depois do fechamento, ele cai no mês seguinte. */
 export function getInvoiceDueDate(closingDate: string, closingDay: number, dueDay: number) {
   const month = closingDate.slice(0, 7)
