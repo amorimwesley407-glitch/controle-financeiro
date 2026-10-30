@@ -7,6 +7,13 @@ const tx = (over: Partial<Parameters<typeof getBudgetAlerts>[0][number]>) => ({
 })
 const budget = (over = {}) => ({ name: 'Mercado', limitCents: 10000, month: '2026-10', categoryId: 1, ...over })
 
+describe('getFixedExpenses com parcelas', () => {
+  it('não trata parcelas como gasto fixo', () => {
+    const parcela = (date: string) => ({ type: 'expense', amountCents: 5000, date, description: 'Notebook', installmentGroup: 'grupo' })
+    expect(getFixedExpenses([parcela('2026-08-05'), parcela('2026-09-05'), parcela('2026-10-05')], '2026-10-10').items).toEqual([])
+  })
+})
+
 describe('getBudgetAlerts', () => {
   it('só alerta a partir de 70% do limite', () => {
     expect(getBudgetAlerts([tx({ amountCents: 6900 })], [budget()], categories, '2026-10-10')).toEqual([])

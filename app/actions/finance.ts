@@ -2,10 +2,11 @@
 
 import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
-import { and, between, eq } from 'drizzle-orm'
+import { and, between, eq, or } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { budgets, categories, goals, holdings, transactions, user as users } from '@/lib/db/schema'
+import { budgets, categories, financialAccounts, goals, holdings, transactions, transfers, user as users } from '@/lib/db/schema'
+import { addMonthsToDate, splitInstallments } from '@/lib/accounts'
 import { findMissingCategories, matchCategory, MAX_NEW_CATEGORIES_PER_IMPORT, skipExistingTransactions } from '@/lib/import'
 import { findSuggestedCategory } from '@/lib/categorize'
 import { parseMoneyToCents } from '@/lib/money'
@@ -55,10 +56,30 @@ export async function addTransaction(form: FormData) {
     const userCategories = await db.select({ id: categories.id, name: categories.name, type: categories.type }).from(categories).where(eq(categories.userId, userId))
     parsed.categoryId = findSuggestedCategory(parsed.description, parsed.type, userCategories)?.id
   }
+  const account = await getOwnedAccount(form.get('accountId'), userId)
+  const accountId = account?.id ?? null
+  const installments = z.coerce.number().int().min(1).max(48).parse(form.get('installments') || 1)
+  if (installments > 1) {
+    if (parsed.type !== 'expense' || account?.kind !== 'credit_card') throw new Error('Parcelas só valem para despesas em um cartão de crédito')
+    if (recurring) throw new Error('Um lançamento não pode ser parcelado e recorrente ao mesmo tempo')
+    if (parsed.amount < installments) throw new Error('O valor é pequeno demais para esse número de parcelas')
+    const installmentGroup = crypto.randomUUID()
+    await db.insert(transactions).values(splitInstallments(parsed.amount, installments).map((amountCents, index) => ({ userId, description: parsed.description, type: parsed.type, date: addMonthsToDate(parsed.date, index), amountCents, categoryId: parsed.categoryId, accountId, installmentGroup, installmentNumber: index + 1, installmentTotal: installments })))
+    revalidatePath('/')
+    return
+  }
   const values=[];const [year,monthIndex,day]=parsed.date.split('-').map(Number);let offset=0
-  do {const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(recurrenceEnd&&occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId:parsed.categoryId,recurring});offset++;if(offset>120)throw new Error('O período recorrente deve ter no máximo 120 meses')}while(recurrenceEnd)
+  do {const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(recurrenceEnd&&occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId:parsed.categoryId,accountId,recurring});offset++;if(offset>120)throw new Error('O período recorrente deve ter no máximo 120 meses')}while(recurrenceEnd)
   await db.insert(transactions).values(values)
   revalidatePath('/')
+}
+/** Conta escolhida no formulário, conferindo o dono. Vazio ou "none" significa sem conta. */
+async function getOwnedAccount(value: FormDataEntryValue | null, userId: string) {
+  if (!value || value === 'none') return null
+  const id = z.coerce.number().int().positive().parse(value)
+  const [account] = await db.select().from(financialAccounts).where(and(eq(financialAccounts.id, id), eq(financialAccounts.userId, userId))).limit(1)
+  if (!account) throw new Error('Conta inválida')
+  return account
 }
 export async function updateTransaction(id: number, form: FormData) {
   const userId = await getUserId()
@@ -74,14 +95,74 @@ export async function updateTransaction(id: number, form: FormData) {
     const category = await db.select({ id: categories.id, type: categories.type }).from(categories).where(and(eq(categories.id, categoryId), eq(categories.userId, userId))).limit(1)
     if (!category[0] || category[0].type !== parsed.type) categoryId = null
   }
+  const accountId = (await getOwnedAccount(form.get('accountId'), userId))?.id ?? null
   const newImage = await saveTransactionImage(form.get('image'), userId)
   const removeImage = form.get('removeImage') === 'true'
-  await db.update(transactions).set({ description: parsed.description, type: parsed.type, date: parsed.date, amountCents: parsed.amount, categoryId, recurring, imagePath: newImage??(removeImage?null:existing[0].imagePath) }).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId)))
+  await db.update(transactions).set({ description: parsed.description, type: parsed.type, date: parsed.date, amountCents: parsed.amount, categoryId, accountId, recurring, imagePath: newImage??(removeImage?null:existing[0].imagePath) }).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId)))
   if ((newImage || removeImage) && existing[0].imagePath) await removeTransactionImage(existing[0].imagePath,userId)
-  if(recurrenceEnd){const values=[];const [year,monthIndex,day]=parsed.date.split('-').map(Number);for(let offset=1;offset<=120;offset++){const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId,recurring:true})}if(values.length)await db.insert(transactions).values(values)}
+  if(recurrenceEnd){const values=[];const [year,monthIndex,day]=parsed.date.split('-').map(Number);for(let offset=1;offset<=120;offset++){const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId,accountId,recurring:true})}if(values.length)await db.insert(transactions).values(values)}
   revalidatePath('/')
 }
 export async function deleteTransaction(id: number) { const userId = await getUserId(); const safeId = z.number().int().positive().parse(id); const existing=await db.select().from(transactions).where(and(eq(transactions.id,safeId),eq(transactions.userId,userId))).limit(1); if(!existing[0])throw new Error('Transação não encontrada'); await db.delete(transactions).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId))); await removeTransactionImage(existing[0].imagePath,userId); revalidatePath('/') }
+export async function deleteInstallments(group: string) {
+  const userId = await getUserId()
+  const safeGroup = z.string().uuid().parse(group)
+  const removed = await db.delete(transactions).where(and(eq(transactions.installmentGroup, safeGroup), eq(transactions.userId, userId))).returning({ imagePath: transactions.imagePath })
+  if (!removed.length) throw new Error('Parcelas não encontradas')
+  await Promise.all(removed.map(item => removeTransactionImage(item.imagePath, userId)))
+  revalidatePath('/')
+}
+
+function parseAccountForm(form: FormData) {
+  const parsed = z.object({ name: z.string().trim().min(2).max(40), kind: z.enum(['checking', 'savings', 'cash', 'credit_card']), initialBalance: z.preprocess(value => parseMoneyToCents(value || 0), z.number().int().safe()) }).parse({ name: form.get('name'), kind: form.get('kind'), initialBalance: form.get('initialBalance') })
+  if (parsed.kind !== 'credit_card') return { name: parsed.name, kind: parsed.kind, initialBalanceCents: parsed.initialBalance, closingDay: null, dueDay: null }
+  const day = z.coerce.number().int().min(1).max(31)
+  // No cartão o formulário pede a dívida já existente, que entra no saldo como valor negativo.
+  return { name: parsed.name, kind: parsed.kind, initialBalanceCents: -Math.abs(parsed.initialBalance), closingDay: day.parse(form.get('closingDay')), dueDay: day.parse(form.get('dueDay')) }
+}
+export async function addAccount(form: FormData) {
+  const userId = await getUserId()
+  const result = await db.insert(financialAccounts).values({ userId, ...parseAccountForm(form) }).onConflictDoNothing().returning({ id: financialAccounts.id })
+  if (!result.length) throw new Error('Já existe uma conta com esse nome')
+  revalidatePath('/')
+}
+export async function updateAccount(id: number, form: FormData) {
+  const userId = await getUserId()
+  const safeId = z.number().int().positive().parse(id)
+  const values = parseAccountForm(form)
+  const [duplicate] = await db.select({ id: financialAccounts.id }).from(financialAccounts).where(and(eq(financialAccounts.userId, userId), eq(financialAccounts.name, values.name))).limit(1)
+  if (duplicate && duplicate.id !== safeId) throw new Error('Já existe uma conta com esse nome')
+  const result = await db.update(financialAccounts).set(values).where(and(eq(financialAccounts.id, safeId), eq(financialAccounts.userId, userId))).returning({ id: financialAccounts.id })
+  if (!result.length) throw new Error('Conta não encontrada')
+  revalidatePath('/')
+}
+export async function deleteAccount(id: number) {
+  const userId = await getUserId()
+  const safeId = z.number().int().positive().parse(id)
+  // Apagar a conta levaria junto as transferências e mudaria o saldo da outra ponta.
+  const [linked] = await db.select({ id: transfers.id }).from(transfers).where(and(eq(transfers.userId, userId), or(eq(transfers.fromAccountId, safeId), eq(transfers.toAccountId, safeId)))).limit(1)
+  if (linked) throw new Error('Exclua antes as transferências desta conta')
+  const result = await db.delete(financialAccounts).where(and(eq(financialAccounts.id, safeId), eq(financialAccounts.userId, userId))).returning({ id: financialAccounts.id })
+  if (!result.length) throw new Error('Conta não encontrada')
+  revalidatePath('/')
+}
+export async function addTransfer(form: FormData) {
+  const userId = await getUserId()
+  const parsed = z.object({ amount: money, date, description: z.string().trim().max(80) }).parse({ amount: form.get('amount'), date: form.get('date'), description: textValue(form.get('description')) })
+  const from = await getOwnedAccount(form.get('fromAccountId'), userId)
+  const to = await getOwnedAccount(form.get('toAccountId'), userId)
+  if (!from || !to) throw new Error('Selecione as duas contas')
+  if (from.id === to.id) throw new Error('Escolha contas diferentes')
+  await db.insert(transfers).values({ userId, fromAccountId: from.id, toAccountId: to.id, amountCents: parsed.amount, date: parsed.date, description: parsed.description })
+  revalidatePath('/')
+}
+export async function deleteTransfer(id: number) {
+  const userId = await getUserId()
+  const safeId = z.number().int().positive().parse(id)
+  const result = await db.delete(transfers).where(and(eq(transfers.id, safeId), eq(transfers.userId, userId))).returning({ id: transfers.id })
+  if (!result.length) throw new Error('Transferência não encontrada')
+  revalidatePath('/')
+}
 export async function addCategory(form: FormData) { const userId = await getUserId(); const name = z.string().trim().min(2).max(30).parse(form.get('name')); const type = z.enum(['income','expense']).parse(form.get('type')); const color = z.string().regex(/^[a-z-]{3,20}$/).parse(form.get('color') || 'blue'); const icon=categoryIcon.parse(form.get('icon')||'wallet');const imagePath=await saveCategoryImage(form.get('image'),userId);await db.insert(categories).values({ userId, name, type, color, icon, imagePath }); revalidatePath('/') }
 
 const categoryIcon=z.enum(['wallet','food','home','transport','shopping','health','education','leisure','work','gift','barber','pet','internet','gym','streaming','transitBenefit','supplements','bill','cardInsurance'])

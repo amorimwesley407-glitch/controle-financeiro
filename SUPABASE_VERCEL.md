@@ -5,6 +5,8 @@
 No painel do Supabase, abra **SQL Editor**, cole o conteúdo de `lib/db/migrations/0001_init.sql` e execute uma vez.
 O script é idempotente: cria as tabelas, índices e o bucket privado `finance-uploads`.
 
+**Migrações novas:** a Vercel não roda migrações. Sempre que entrar um arquivo novo em `lib/db/migrations/`, execute-o no SQL Editor **antes do merge**, em ordem. As migrações só adicionam, então a versão no ar continua funcionando; já o código novo sem a migração derruba a página.
+
 ## 2. Configurar o ambiente local
 
 Copie as variáveis de `.env.example` para `.env.local` e preencha:

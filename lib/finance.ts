@@ -137,7 +137,7 @@ export function getCategoryComparison(transactions: ComparisonTx[], selectedMont
   }
 }
 
-type FixedTx = { type: string; amountCents: number; date: string; description: string; recurring?: boolean; categoryName?: string }
+type FixedTx = { type: string; amountCents: number; date: string; description: string; recurring?: boolean; categoryName?: string; installmentGroup?: string | null }
 
 const descriptionKey = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
 
@@ -145,7 +145,7 @@ const descriptionKey = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/
  * Despesas que se repetem todo mês, olhando os últimos `months` meses até `currentDate`.
  * Entra quando a mesma descrição aparece em pelo menos 3 meses com valor estável (variação de até 15%),
  * ou quando foi cadastrada como recorrente e aparece em pelo menos 2 meses. O valor mensal é o mais recente.
- * Fica de fora o que não aparece nem no mês atual nem no anterior (provavelmente foi cancelado).
+ * Fica de fora o que não aparece nem no mês atual nem no anterior (provavelmente foi cancelado) e as parcelas, que têm fim.
  */
 export function getFixedExpenses(transactions: FixedTx[], currentDate: string, months = 6) {
   const [year, month] = currentDate.slice(0, 7).split('-').map(Number)
@@ -155,7 +155,7 @@ export function getFixedExpenses(transactions: FixedTx[], currentDate: string, m
 
   const groups = new Map<string, FixedTx[]>()
   for (const item of inWindow) {
-    if (item.type !== 'expense') continue
+    if (item.type !== 'expense' || item.installmentGroup) continue
     const key = descriptionKey(item.description)
     groups.set(key, [...(groups.get(key) ?? []), item])
   }
