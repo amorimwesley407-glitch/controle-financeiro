@@ -39,11 +39,15 @@ function objectPathFromValue(value: string | null | undefined) {
 // Só o formato gerado por uploadImage: <userId>/<pasta>/<uuid>.<ext>, sem "..", "%" ou barras extras.
 const ownedPath = /^([A-Za-z0-9_-]+)\/(profile-images|category-icons|transaction-images)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp|avif)$/
 
-/** Caminho do objeto no Storage, só se ele estiver na pasta de `userId`. Qualquer outra coisa vira null. */
+// Imagens anteriores à pasta por usuário: legacy/<pasta>/<8 primeiros caracteres do id do dono>-<uuid>.<ext>.
+const legacyPath = /^legacy\/(?:profile-images|category-icons|transaction-images)\/([A-Za-z0-9_-]{8})-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:png|jpg|webp|avif)$/
+
+/** Caminho do objeto no Storage, só se ele pertencer a `userId`. Qualquer outra coisa vira null. */
 export function ownedObjectPath(value: string | null | undefined, userId: string) {
   const path = objectPathFromValue(value)
-  const match = path ? ownedPath.exec(path) : null
-  return match && userId && match[1] === userId ? path : null
+  if (!path || !userId) return null
+  if (ownedPath.exec(path)?.[1] === userId) return path
+  return legacyPath.exec(path)?.[1] === userId.slice(0, 8) ? path : null
 }
 
 /**
