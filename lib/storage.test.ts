@@ -37,6 +37,29 @@ describe('ownedObjectPath', () => {
     expect(ownedObjectPath(value, alice)).toBeNull()
   })
 
+  describe('imagens antigas na pasta legacy', () => {
+    const owner = 'aXkn170jRestoDoId'
+    const legacy = (prefix: string, folder = 'category-icons', file = `${uuid}.png`) => `https://exemplo.supabase.co/storage/v1/object/public/finance-uploads/legacy/${folder}/${prefix}-${file}`
+
+    it.each(['category-icons', 'transaction-images', 'profile-images'])('aceita as do próprio dono em %s', folder => {
+      expect(ownedObjectPath(legacy('aXkn170j', folder), owner)).toBe(`legacy/${folder}/aXkn170j-${uuid}.png`)
+    })
+
+    it.each([
+      ['de outro dono', legacy('5RBspOCG')],
+      ['com código maior que 8 caracteres', legacy('aXkn170jR')],
+      ['com ".." no caminho', legacy('aXkn170j', '../category-icons')],
+      ['em pasta desconhecida', legacy('aXkn170j', 'outra-pasta')],
+      ['com nome fora do padrão', legacy('aXkn170j', 'category-icons', 'foto.png')],
+    ])('recusa %s', (_, value) => {
+      expect(ownedObjectPath(value, owner)).toBeNull()
+    })
+
+    it('recusa quando o id do usuário é só o começo do código', () => {
+      expect(ownedObjectPath(legacy('aXkn170j'), 'aXkn')).toBeNull()
+    })
+  })
+
   it('recusa tudo quando não há usuário', () => {
     expect(ownedObjectPath(ref(''), '')).toBeNull()
   })
@@ -54,6 +77,18 @@ describe('signImageUrls e removeImage', () => {
   it('não chama o Storage quando nenhuma imagem é do usuário', async () => {
     expect((await signImageUrls([ref('bob456')], alice)).size).toBe(0)
     expect(supabase.bucket.createSignedUrls).not.toHaveBeenCalled()
+  })
+
+  it('gera link e apaga imagens antigas só do próprio dono', async () => {
+    const owner = 'aXkn170jRestoDoId'
+    const mine = `https://exemplo.supabase.co/storage/v1/object/public/finance-uploads/legacy/category-icons/aXkn170j-${uuid}.png`
+    const other = `https://exemplo.supabase.co/storage/v1/object/public/finance-uploads/legacy/category-icons/5RBspOCG-${uuid}.png`
+    const path = `legacy/category-icons/aXkn170j-${uuid}.png`
+    expect([...await signImageUrls([mine, other], owner)]).toEqual([[mine, `https://assinado/${path}`]])
+    await removeImage(other, owner)
+    expect(supabase.bucket.remove).not.toHaveBeenCalled()
+    await removeImage(mine, owner)
+    expect(supabase.bucket.remove).toHaveBeenCalledWith([path])
   })
 
   it('só apaga imagens da pasta do próprio usuário', async () => {
