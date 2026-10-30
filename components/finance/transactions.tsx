@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState, useTransition } from "react";
 import Image from "next/image";
 import { Download, Pencil, ReceiptText, Search, Settings2, Trash2, Upload, WalletCards } from "lucide-react";
-import { deleteTransaction, importTransactions, updateTransaction } from "@/app/actions/finance";
+import { deleteInstallments, deleteTransaction, importTransactions, updateTransaction } from "@/app/actions/finance";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,16 +12,19 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Category, Empty, Field, Tx, brl, categoryIcons, getStreamingServiceImage, isStreamingCategory, repairImportedText, streamingServiceImages, streamingServices, transactionIconStyles } from "@/components/finance/shared";
+import { Account, Category, Empty, Field, Tx, brl, categoryIcons, getStreamingServiceImage, isStreamingCategory, repairImportedText, streamingServiceImages, streamingServices, transactionIconStyles } from "@/components/finance/shared";
 
 export function EditTransactionDialog({
   transaction,
   categories,
+  accounts = [],
 }: {
   transaction: Tx;
   categories: Category[];
+  accounts?: Account[];
 }) {
   const [open, setOpen] = useState(false);
+  const [accountId, setAccountId] = useState(transaction.accountId ? String(transaction.accountId) : "none");
   const [repeatFromHere, setRepeatFromHere] = useState(false);
   const [pending, startTransition] = useTransition();
   const [type, setType] = useState(transaction.type);
@@ -194,6 +197,31 @@ export function EditTransactionDialog({
               />
             </Field>
           </div>
+          {accounts.length > 0 && (
+            <Field label="Conta ou cartão">
+              <Select
+                name="accountId"
+                value={accountId}
+                onValueChange={(value) => setAccountId(String(value))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue>
+                    {(value: string) => accounts.find((account) => String(account.id) === value)?.name ?? "Sem conta"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="none">Sem conta</SelectItem>
+                    {accounts.map((account) => (
+                      <SelectItem key={account.id} value={String(account.id)}>
+                        {account.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
           <Field label="Imagem desta transação (opcional)">
             <Input
               name="image"
@@ -306,6 +334,8 @@ export function TransactionLabel({
         <p className="truncate font-medium">{transaction.description}</p>
         <p className="text-xs text-muted-foreground">
           {category?.name ?? transaction.categoryName ?? "Sem categoria"}
+          {transaction.accountName && ` · ${transaction.accountName}`}
+          {transaction.installmentTotal && ` · Parcela ${transaction.installmentNumber}/${transaction.installmentTotal}`}
         </p>
       </div>
     </div>
@@ -315,10 +345,12 @@ export function TransactionLabel({
 export function TransactionTable({
   transactions,
   categories = [],
+  accounts = [],
   all = false,
 }: {
   transactions: Tx[];
   categories?: Category[];
+  accounts?: Account[];
   all?: boolean;
 }) {
   const [query, setQuery] = useState("");
@@ -328,6 +360,7 @@ export function TransactionTable({
   const [minimum, setMinimum] = useState("");
   const [maximum, setMaximum] = useState("");
   const [importing, setImporting] = useState(false);
+  const [installmentToRemove, setInstallmentToRemove] = useState<Tx | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
   const rows = useMemo(() => {
@@ -345,19 +378,27 @@ export function TransactionTable({
         t.amountCents <= max,
     );
   }, [all, from, kind, maximum, minimum, query, to, transactions]);
-  async function remove(transaction: Tx) {
-    if (
-      !window.confirm(
-        `Excluir “${transaction.description}”? Esta ação não pode ser desfeita.`,
-      )
-    )
-      return;
+  async function removeInstallments(transaction: Tx) {
+    setInstallmentToRemove(null);
+    try {
+      await deleteInstallments(transaction.installmentGroup!);
+      toast.success("Parcelas excluídas.");
+    } catch {
+      toast.error("Não foi possível excluir as parcelas.");
+    }
+  }
+  async function removeOne(transaction: Tx) {
+    setInstallmentToRemove(null);
     try {
       await deleteTransaction(transaction.id);
       toast.success("Lançamento excluído.");
     } catch {
       toast.error("Não foi possível excluir o lançamento.");
     }
+  }
+  function remove(transaction: Tx) {
+    if (transaction.installmentGroup) return setInstallmentToRemove(transaction);
+    if (window.confirm(`Excluir “${transaction.description}”? Esta ação não pode ser desfeita.`)) void removeOne(transaction);
   }
   function exportCsv() {
     const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
@@ -662,6 +703,7 @@ export function TransactionTable({
                       <EditTransactionDialog
                         transaction={t}
                         categories={categories}
+                        accounts={accounts}
                       />
                       <Button
                         variant="ghost"
@@ -687,6 +729,23 @@ export function TransactionTable({
           />
         )}
       </CardContent>
+      <Dialog open={installmentToRemove !== null} onOpenChange={(open) => { if (!open) setInstallmentToRemove(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir parcela</DialogTitle>
+            <DialogDescription>
+              “{installmentToRemove?.description}”, parcela {installmentToRemove?.installmentNumber} de {installmentToRemove?.installmentTotal}. Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" onClick={() => setInstallmentToRemove(null)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => installmentToRemove && removeOne(installmentToRemove)}>Só esta parcela</Button>
+            <Button variant="destructive" onClick={() => installmentToRemove && removeInstallments(installmentToRemove)}>
+              Todas as {installmentToRemove?.installmentTotal} parcelas
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

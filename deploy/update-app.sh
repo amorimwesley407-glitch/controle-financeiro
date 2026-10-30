@@ -34,6 +34,8 @@ git merge --quiet --ff-only origin/main
 install_if_lock_changed "$old" "$new" || rollback
 npx tsc --noEmit || rollback
 npm test || rollback
+# As migrações só adicionam, então a versão anterior continua funcionando se o rollback for necessário.
+npm run db:migrate || rollback
 npm run build || rollback
 systemctl --user restart clareza
 echo "App atualizado para ${new:0:7}: $(git log -1 --format=%s)"

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, ChartColumn, LayoutDashboard, Lightbulb, LogOut, Menu, ReceiptText, Settings2, Target, TrendingUp, UserRound, WalletCards } from "lucide-react";
+import { CalendarDays, ChartColumn, CreditCard, LayoutDashboard, Lightbulb, LogOut, Menu, ReceiptText, Settings2, Target, TrendingUp, UserRound, WalletCards } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -10,7 +10,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { FinancialGoalsOrbit } from "@/components/financial-goals-orbit";
 import { LocationTag } from "@/components/ui/location-tag";
 import { GoalsFeatureCard } from "@/components/goals-feature-card";
-import { Budget, Category, GoalType, Holding, Tx } from "@/components/finance/shared";
+import { Account, Budget, Category, GoalType, Holding, Transfer, Tx } from "@/components/finance/shared";
+import { AccountsView } from "@/components/finance/accounts-view";
 import { FormDialog } from "@/components/finance/form-dialog";
 import { TransactionTable } from "@/components/finance/transactions";
 import { CategoriesView } from "@/components/finance/categories-view";
@@ -32,12 +33,15 @@ type Props = {
   goals: GoalType[];
   budgets: Budget[];
   holdings: Holding[];
+  accounts: Account[];
+  transfers: Transfer[];
 };
 type View =
   | "dashboard"
   | "reports"
   | "tools"
   | "transactions"
+  | "accounts"
   | "planning"
   | "investment"
   | "investments"
@@ -51,6 +55,8 @@ export function FinanceDashboard({
   goals,
   budgets,
   holdings,
+  accounts,
+  transfers,
 }: Props) {
   const router = useRouter();
   const [mobile, setMobile] = useState(false);
@@ -129,6 +135,7 @@ export function FinanceDashboard({
       "Transações",
       "Consulte e organize todas as receitas e despesas.",
     ],
+    accounts: ["Contas e cartões", "Acompanhe saldos, faturas e parcelas."],
     planning: ["Planejamento", "Transforme seus objetivos em planos mensais."],
     investment: [
       "Investment",
@@ -192,6 +199,13 @@ export function FinanceDashboard({
             onClick={() => navigate("transactions")}
           >
             Transações
+          </Nav>
+          <Nav
+            icon={CreditCard}
+            active={view === "accounts"}
+            onClick={() => navigate("accounts")}
+          >
+            Contas e cartões
           </Nav>
           <Nav
             icon={Target}
@@ -291,7 +305,7 @@ export function FinanceDashboard({
               currentDate={currentDate}
             />
             <ThemeToggle />
-            <FormDialog type="transaction" categories={categories} />
+            <FormDialog type="transaction" categories={categories} accounts={accounts} />
             <AccountMenu
               initials={initials}
               image={displayImage}
@@ -329,6 +343,7 @@ export function FinanceDashboard({
                     (transaction) => transaction.date <= currentDate,
                   )}
                   categories={categories}
+                  accounts={accounts}
                 />
               </div>
               <Insights savings={savings} expense={expense} income={income} />
@@ -356,7 +371,7 @@ export function FinanceDashboard({
           {view === "transactions" && (
             <section className="flex flex-col gap-4">
               <div className="flex justify-end">
-                <FormDialog type="transaction" categories={categories} />
+                <FormDialog type="transaction" categories={categories} accounts={accounts} />
               </div>
               <TransactionTable
                 transactions={transactions.filter(
@@ -364,9 +379,18 @@ export function FinanceDashboard({
                     transaction.date.slice(0, 7) <= currentDate.slice(0, 7),
                 )}
                 categories={categories}
+                accounts={accounts}
                 all
               />
             </section>
+          )}
+          {view === "accounts" && (
+            <AccountsView
+              accounts={accounts}
+              transfers={transfers}
+              transactions={transactions}
+              currentDate={currentDate}
+            />
           )}
           {view === "planning" && (
             <div className="flex flex-col gap-6">

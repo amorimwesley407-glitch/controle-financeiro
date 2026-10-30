@@ -9,19 +9,23 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Category, Field, Quote, brl, categoryIconOptions, categoryIcons, investmentOptions, isFixedIncomeType, isStreamingCategory, streamingServiceImages, streamingServices } from "@/components/finance/shared";
+import { Account, Category, Field, Quote, brl, categoryIconOptions, categoryIcons, investmentOptions, isFixedIncomeType, isStreamingCategory, streamingServiceImages, streamingServices } from "@/components/finance/shared";
 
 export function FormDialog({
   type,
   categories,
   quotes = [],
+  accounts = [],
 }: {
   type: "transaction" | "category" | "goal" | "budget" | "holding";
   categories: Category[];
   quotes?: Quote[];
+  accounts?: Account[];
 }) {
   const [open, setOpen] = useState(false);
   const [recurring, setRecurring] = useState(false);
+  const [accountId, setAccountId] = useState("none");
+  const [installments, setInstallments] = useState("1");
   const [transactionType, setTransactionType] = useState("expense");
   const [transactionCategoryId, setTransactionCategoryId] = useState("none");
   const [holdingType, setHoldingType] = useState<keyof typeof investmentOptions>(
@@ -48,6 +52,10 @@ export function FormDialog({
     (category) => String(category.id) === transactionCategoryId,
   );
   const transactionIsStreaming = isStreamingCategory(selectedTransactionCategory);
+  const canSplit =
+    transactionType === "expense" &&
+    accounts.some((account) => String(account.id) === accountId && account.kind === "credit_card");
+  const isInstallment = canSplit && Number(installments) > 1;
   const meta = {
     transaction: ["Novo lançamento", "Registre uma receita ou despesa."],
     category: ["Nova categoria", "Personalize a organização dos seus gastos."],
@@ -193,22 +201,69 @@ export function FormDialog({
                   />
                 </Field>
               </div>
-              <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
-                <input
-                  name="recurring"
-                  type="checkbox"
-                  value="true"
-                  checked={recurring}
-                  onChange={(event) => setRecurring(event.target.checked)}
-                />
-                <span>
-                  <span className="block font-medium">Repetir mensalmente</span>
-                  <span className="text-xs text-muted-foreground">
-                    Cria o lançamento no mesmo dia de cada mês.
+              {accounts.length > 0 && (
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Conta ou cartão">
+                    <Select
+                      name="accountId"
+                      value={accountId}
+                      onValueChange={(value) => setAccountId(String(value))}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue>
+                          {(value: string) => accounts.find((account) => String(account.id) === value)?.name ?? "Sem conta"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="none">Sem conta</SelectItem>
+                          {accounts.map((account) => (
+                            <SelectItem key={account.id} value={String(account.id)}>
+                              {account.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  {canSplit && !recurring && (
+                    <Field label="Parcelas">
+                      <Input
+                        name="installments"
+                        type="number"
+                        min="1"
+                        max="48"
+                        value={installments}
+                        onChange={(event) => setInstallments(event.target.value)}
+                        required
+                      />
+                    </Field>
+                  )}
+                </div>
+              )}
+              {isInstallment && (
+                <p className="text-xs text-muted-foreground">
+                  Informe em Valor o total da compra. Ele será dividido em {installments} parcelas mensais a partir da primeira data.
+                </p>
+              )}
+              {!isInstallment && (
+                <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
+                  <input
+                    name="recurring"
+                    type="checkbox"
+                    value="true"
+                    checked={recurring}
+                    onChange={(event) => setRecurring(event.target.checked)}
+                  />
+                  <span>
+                    <span className="block font-medium">Repetir mensalmente</span>
+                    <span className="text-xs text-muted-foreground">
+                      Cria o lançamento no mesmo dia de cada mês.
+                    </span>
                   </span>
-                </span>
-              </label>
-              {recurring && (
+                </label>
+              )}
+              {recurring && !isInstallment && (
                 <Field label="Repetir até">
                   <Input
                     name="recurrenceEnd"

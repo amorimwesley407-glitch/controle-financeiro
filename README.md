@@ -6,6 +6,7 @@ Aplicação web de controle financeiro pessoal construída com Next.js. Permite 
 
 - Cadastro e autenticação com e-mail e senha
 - Receitas, despesas e lançamentos recorrentes
+- Contas com saldo, transferências e cartões de crédito com faturas e compras parceladas
 - Categorias personalizadas com ícones e imagens
 - Orçamentos mensais por categoria
 - Metas financeiras

@@ -121,6 +121,53 @@ describe.skipIf(!testDatabaseUrl)('isolamento entre usuários', () => {
     expect(count).toBe(2)
   })
 
+  describe('contas, transferências e parcelas', () => {
+    const group = '0f8b2a4e-1c3d-4e5f-8a9b-0c1d2e3f4a5b'
+    let bobAccount: number
+    let bobCard: number
+    let aliceAccount: number
+    let bobTransfer: number
+    const bobAccountRows = async () => ({
+      accounts: await sql`SELECT "id", "name", "initialBalanceCents" FROM "financial_accounts" WHERE "userId" = ${BOB} ORDER BY "id"`,
+      transfers: await sql`SELECT "id", "amountCents" FROM "transfers" WHERE "userId" = ${BOB}`,
+      installments: await sql`SELECT "id" FROM "transactions" WHERE "installmentGroup" = ${group}`,
+    })
+
+    beforeEach(async () => {
+      ;[{ id: aliceAccount }] = await sql`INSERT INTO "financial_accounts" ("userId", "name", "kind") VALUES (${ALICE}, 'Conta', 'checking') RETURNING "id"`
+      ;[{ id: bobAccount }] = await sql`INSERT INTO "financial_accounts" ("userId", "name", "kind") VALUES (${BOB}, 'Conta', 'checking') RETURNING "id"`
+      ;[{ id: bobCard }] = await sql`INSERT INTO "financial_accounts" ("userId", "name", "kind", "closingDay", "dueDay") VALUES (${BOB}, 'Cartão', 'credit_card', 10, 20) RETURNING "id"`
+      ;[{ id: bobTransfer }] = await sql`INSERT INTO "transfers" ("userId", "fromAccountId", "toAccountId", "amountCents", "date") VALUES (${BOB}, ${bobAccount}, ${bobCard}, 100, '2026-10-01') RETURNING "id"`
+      await sql`INSERT INTO "transactions" ("userId", "type", "description", "amountCents", "date", "accountId", "installmentGroup", "installmentNumber", "installmentTotal") VALUES (${BOB}, 'expense', 'Parcela', 100, '2026-10-01', ${bobCard}, ${group}, 1, 2)`
+    })
+
+    it('não deixa alterar, apagar nem usar as contas de outro usuário', async () => {
+      const before = await bobAccountRows()
+      const attempts = [
+        () => actions.updateAccount(bobAccount, form({ name: 'Invadida', kind: 'checking', initialBalance: '9' })),
+        () => actions.deleteAccount(bobCard),
+        () => actions.deleteTransfer(bobTransfer),
+        () => actions.deleteInstallments(group),
+        () => actions.addTransfer(form({ amount: '1', date: '2026-10-02', fromAccountId: String(aliceAccount), toAccountId: String(bobAccount) })),
+        () => actions.addTransaction(form({ description: 'Compra', type: 'expense', date: '2026-10-02', amount: '10', accountId: String(bobAccount) })),
+        () => actions.updateTransaction(aliceTransactionId, form({ description: 'Ônibus', type: 'expense', date: '2026-10-01', amount: '4,50', accountId: String(bobAccount) })),
+      ]
+      for (const attempt of attempts) await expect(attempt()).rejects.toThrow()
+      expect(await bobAccountRows()).toEqual(before)
+    })
+
+    it('parcela no cartão com uma parcela por fatura e soma igual ao total', async () => {
+      const [{ id: card }] = await sql`INSERT INTO "financial_accounts" ("userId", "name", "kind", "closingDay", "dueDay") VALUES (${ALICE}, 'Cartão', 'credit_card', 30, 10) RETURNING "id"`
+      await actions.addTransaction(form({ description: 'Televisão', type: 'expense', date: '2027-01-31', amount: '100', accountId: String(card), installments: '3' }))
+      const rows = await sql`SELECT "date", "amountCents" FROM "transactions" WHERE "accountId" = ${card} ORDER BY "date"`
+      expect(rows).toEqual([
+        { date: '2027-01-31', amountCents: 3334 },
+        { date: '2027-03-01', amountCents: 3333 },
+        { date: '2027-03-31', amountCents: 3333 },
+      ])
+    })
+  })
+
   it('sugestão automática usa só as categorias de quem cadastra', async () => {
     await actions.addTransaction(form({ description: 'Mercado do mês', type: 'expense', date: '2026-10-04', amount: '200' }))
     await actions.addTransaction(form({ description: 'Uber', type: 'expense', date: '2026-10-04', amount: '20' }))

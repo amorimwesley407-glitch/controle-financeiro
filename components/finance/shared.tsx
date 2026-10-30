@@ -18,6 +18,29 @@ export type Tx = {
   categoryName?: string;
   categoryIcon?: string;
   categoryImage?: string | null;
+  accountId?: number | null;
+  accountName?: string;
+  installmentGroup?: string | null;
+  installmentNumber?: number | null;
+  installmentTotal?: number | null;
+};
+
+export type Account = {
+  id: number;
+  name: string;
+  kind: string;
+  initialBalanceCents: number;
+  closingDay: number | null;
+  dueDay: number | null;
+};
+
+export type Transfer = {
+  id: number;
+  fromAccountId: number;
+  toAccountId: number;
+  amountCents: number;
+  date: string;
+  description: string;
 };
 
 export type Category = {
