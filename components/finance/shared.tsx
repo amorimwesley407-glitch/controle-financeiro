@@ -15,6 +15,7 @@ export type Tx = {
   categoryId: number | null;
   imagePath?: string | null;
   recurring?: boolean;
+  notes?: string | null;
   categoryName?: string;
   categoryIcon?: string;
   categoryImage?: string | null;
