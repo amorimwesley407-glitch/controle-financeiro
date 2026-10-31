@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
+import { decodeOfx, parseOfx } from "@/lib/ofx";
 import { Account, Category, Empty, Field, Tx, brl, categoryIcons, getStreamingServiceImage, isStreamingCategory, repairImportedText, streamingServiceImages, streamingServices, transactionIconStyles } from "@/components/finance/shared";
 
 export function EditTransactionDialog({
@@ -222,6 +223,9 @@ export function EditTransactionDialog({
               </Select>
             </Field>
           )}
+          <Field label="Observações (opcional)">
+            <Input name="notes" defaultValue={transaction.notes ?? ""} maxLength={500} />
+          </Field>
           <Field label="Imagem desta transação (opcional)">
             <Input
               name="image"
@@ -337,6 +341,7 @@ export function TransactionLabel({
           {transaction.accountName && ` · ${transaction.accountName}`}
           {transaction.installmentTotal && ` · Parcela ${transaction.installmentNumber}/${transaction.installmentTotal}`}
         </p>
+        {transaction.notes && <p className="truncate text-xs text-muted-foreground" title={transaction.notes}>{transaction.notes}</p>}
       </div>
     </div>
   );
@@ -371,7 +376,7 @@ export function TransactionTable({
     return source.filter(
       (t) =>
         (kind === "all" || t.type === kind) &&
-        (!term || t.description.toLocaleLowerCase("pt-BR").includes(term)) &&
+        (!term || t.description.toLocaleLowerCase("pt-BR").includes(term) || t.notes?.toLocaleLowerCase("pt-BR").includes(term)) &&
         (!from || t.date >= from) &&
         (!to || t.date <= to) &&
         t.amountCents >= min &&
@@ -403,13 +408,14 @@ export function TransactionTable({
   function exportCsv() {
     const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
     const lines = [
-      ["Descrição", "Data", "Tipo", "Valor", "Categoria"],
+      ["Descrição", "Data", "Tipo", "Valor", "Categoria", "Observações"],
       ...rows.map((t) => [
         t.description,
         t.date,
         t.type === "income" ? "Receita" : "Despesa",
         (t.amountCents / 100).toFixed(2).replace(".", ","),
         t.categoryName ?? "",
+        t.notes ?? "",
       ]),
     ].map((line) => line.map((value) => escape(String(value))).join(";"));
     const url = URL.createObjectURL(
@@ -424,10 +430,27 @@ export function TransactionTable({
     URL.revokeObjectURL(url);
     toast.success("Arquivo CSV exportado.");
   }
+  function showImportResult(result: { count: number; skipped: number; newCategories: number }) {
+    const skipped = result.skipped
+      ? ` ${result.skipped} ${result.skipped === 1 ? "linha já existia e foi ignorada" : "linhas já existiam e foram ignoradas"}.`
+      : "";
+    if (!result.count) toast.info(`Nenhuma transação nova.${skipped}`);
+    else
+      toast.success(
+        `${result.count} transações importadas${result.newCategories ? ` e ${result.newCategories} categoria${result.newCategories === 1 ? "" : "s"} criada${result.newCategories === 1 ? "" : "s"}` : ""}.${skipped}`,
+      );
+  }
   async function importFile(file: File) {
     setImporting(true);
     try {
-      if (file.size > 2 * 1024 * 1024) throw new Error("O CSV deve ter no máximo 2 MB");
+      if (file.size > 2 * 1024 * 1024) throw new Error("O arquivo deve ter no máximo 2 MB");
+      if (file.name.toLowerCase().endsWith(".ofx")) {
+        const rows = parseOfx(decodeOfx(await file.arrayBuffer()));
+        if (!rows.length) throw new Error("O arquivo OFX não tem lançamentos");
+        if (rows.length > 1000) throw new Error("O arquivo deve ter no máximo 1000 lançamentos");
+        showImportResult(await importTransactions(rows));
+        return;
+      }
       const csv = repairImportedText(await file.text()).replace(/^\uFEFF/, "");
       const firstLine = csv.split(/\r?\n/, 1)[0] ?? "";
       const delimiter = (firstLine.match(/;/g)?.length ?? 0) >= (firstLine.match(/,/g)?.length ?? 0) ? ";" : ",";
@@ -511,14 +534,7 @@ export function TransactionTable({
         };
       });
       const result = await importTransactions(parsed);
-      const skipped = result.skipped
-        ? ` ${result.skipped} ${result.skipped === 1 ? "linha já existia e foi ignorada" : "linhas já existiam e foram ignoradas"}.`
-        : "";
-      if (!result.count) toast.info(`Nenhuma transação nova.${skipped}`);
-      else
-        toast.success(
-          `${result.count} transações importadas${result.newCategories ? ` e ${result.newCategories} categoria${result.newCategories === 1 ? "" : "s"} criada${result.newCategories === 1 ? "" : "s"}` : ""}.${skipped}`,
-        );
+      showImportResult(result);
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -549,7 +565,7 @@ export function TransactionTable({
               <input
                 ref={importInput}
                 type="file"
-                accept=".csv,text/csv"
+                accept=".csv,text/csv,.ofx,application/x-ofx"
                 className="hidden"
                 onChange={(event) => {
                   const file = event.target.files?.[0];
@@ -564,7 +580,7 @@ export function TransactionTable({
                 disabled={importing}
               >
                 <Upload data-icon="inline-start" />
-                {importing ? "Importando…" : "Importar CSV"}
+                {importing ? "Importando…" : "Importar CSV ou OFX"}
               </Button>
               <Button
                 type="button"

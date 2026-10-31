@@ -168,6 +168,30 @@ describe.skipIf(!testDatabaseUrl)('isolamento entre usuários', () => {
     })
   })
 
+  it('aprende a categoria com os lançamentos de quem cadastra, e nunca com os de outro usuário', async () => {
+    const [{ id: lazer }] = await sql`INSERT INTO "categories" ("userId", "name", "type") VALUES (${ALICE}, 'Lazer', 'expense') RETURNING "id"`
+    await sql`INSERT INTO "transactions" ("userId", "type", "description", "amountCents", "date", "categoryId") VALUES (${BOB}, 'expense', 'Clube da esquina', 100, '2026-10-01', ${bob.categoryId})`
+    await actions.addTransaction(form({ description: 'Clube da esquina', type: 'expense', date: '2026-10-02', amount: '10' }))
+    const category = async () => (await sql`SELECT "categoryId" FROM "transactions" WHERE "userId" = ${ALICE} AND "description" ILIKE 'clube%' ORDER BY "id" DESC LIMIT 1`)[0].categoryId
+    expect(await category()).toBeNull()
+
+    const [{ id }] = await sql`SELECT "id" FROM "transactions" WHERE "userId" = ${ALICE} AND "description" = 'Clube da esquina'`
+    await actions.updateTransaction(id, form({ description: 'Clube da esquina', type: 'expense', date: '2026-10-02', amount: '10', categoryId: String(lazer) }))
+    await actions.addTransaction(form({ description: 'CLUBE DA ESQUINA', type: 'expense', date: '2026-10-03', amount: '10' }))
+    expect(await category()).toBe(lazer)
+    await actions.importTransactions([{ description: 'clube da esquina', type: 'expense', date: '2026-10-04', amountCents: 500 }])
+    expect(await category()).toBe(lazer)
+  })
+
+  it('guarda e altera as observações do lançamento', async () => {
+    await actions.addTransaction(form({ description: 'Bolo', type: 'expense', date: '2026-10-02', amount: '10', notes: '  aniversário  ' }))
+    const [row] = await sql`SELECT "id", "notes" FROM "transactions" WHERE "userId" = ${ALICE} AND "description" = 'Bolo'`
+    expect(row.notes).toBe('aniversário')
+    await actions.updateTransaction(row.id, form({ description: 'Bolo', type: 'expense', date: '2026-10-02', amount: '10', notes: '' }))
+    expect((await sql`SELECT "notes" FROM "transactions" WHERE "id" = ${row.id}`)[0].notes).toBeNull()
+    await expect(actions.addTransaction(form({ description: 'Bolo', type: 'expense', date: '2026-10-02', amount: '10', notes: 'x'.repeat(501) }))).rejects.toThrow()
+  })
+
   it('sugestão automática usa só as categorias de quem cadastra', async () => {
     await actions.addTransaction(form({ description: 'Mercado do mês', type: 'expense', date: '2026-10-04', amount: '200' }))
     await actions.addTransaction(form({ description: 'Uber', type: 'expense', date: '2026-10-04', amount: '20' }))

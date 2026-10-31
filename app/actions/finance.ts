@@ -2,13 +2,13 @@
 
 import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
-import { and, between, eq, or } from 'drizzle-orm'
+import { and, between, desc, eq, isNotNull, or } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { budgets, categories, financialAccounts, goals, holdings, transactions, transfers, user as users } from '@/lib/db/schema'
 import { getInstallmentDates, splitInstallments } from '@/lib/accounts'
 import { findMissingCategories, matchCategory, MAX_NEW_CATEGORIES_PER_IMPORT, skipExistingTransactions } from '@/lib/import'
-import { findSuggestedCategory } from '@/lib/categorize'
+import { findLearnedCategory, findSuggestedCategory } from '@/lib/categorize'
 import { parseMoneyToCents } from '@/lib/money'
 import { removeImage, uploadImage } from '@/lib/storage'
 import { z } from 'zod'
@@ -43,6 +43,12 @@ async function removeProfileImage(imagePath: string | null, userId: string) {
   await removeImage(imagePath, userId)
 }
 
+/** Sugere a categoria: primeiro o que o usuário já escolheu para essa descrição, depois as regras gerais. */
+async function categorySuggester<T extends { id: number; name: string; type: string }>(userId: string, userCategories: T[]) {
+  const history = await db.select({ description: transactions.description, type: transactions.type, categoryId: transactions.categoryId }).from(transactions).where(and(eq(transactions.userId, userId), isNotNull(transactions.categoryId))).orderBy(desc(transactions.date), desc(transactions.id))
+  return (description: string, type: string) => findLearnedCategory(description, type, history, userCategories) ?? findSuggestedCategory(description, type, userCategories)
+}
+const parseNotes = (form: FormData) => z.string().trim().max(500, 'As observações devem ter no máximo 500 caracteres').parse(textValue(form.get('notes'))) || null
 export async function addTransaction(form: FormData) {
   const userId = await getUserId()
   const parsed = z.object({ description: z.string().trim().min(2).max(80), type: z.enum(['income','expense']), date, amount: money, categoryId: z.coerce.number().int().positive().optional() }).parse({ description: form.get('description'), type: form.get('type'), date: form.get('date'), amount: form.get('amount'), categoryId: form.get('categoryId')==='none'?undefined:form.get('categoryId')||undefined })
@@ -54,8 +60,9 @@ export async function addTransaction(form: FormData) {
     if (!category[0] || category[0].type !== parsed.type) throw new Error('Categoria inválida para este lançamento')
   } else {
     const userCategories = await db.select({ id: categories.id, name: categories.name, type: categories.type }).from(categories).where(eq(categories.userId, userId))
-    parsed.categoryId = findSuggestedCategory(parsed.description, parsed.type, userCategories)?.id
+    parsed.categoryId = (await categorySuggester(userId, userCategories))(parsed.description, parsed.type)?.id
   }
+  const notes = parseNotes(form)
   const account = await getOwnedAccount(form.get('accountId'), userId)
   const accountId = account?.id ?? null
   const installments = z.coerce.number().int().min(1).max(48).parse(form.get('installments') || 1)
@@ -65,12 +72,12 @@ export async function addTransaction(form: FormData) {
     if (parsed.amount < installments) throw new Error('O valor é pequeno demais para esse número de parcelas')
     const installmentGroup = crypto.randomUUID()
     const dates = getInstallmentDates(parsed.date, installments, account.closingDay)
-    await db.insert(transactions).values(splitInstallments(parsed.amount, installments).map((amountCents, index) => ({ userId, description: parsed.description, type: parsed.type, date: dates[index], amountCents, categoryId: parsed.categoryId, accountId, installmentGroup, installmentNumber: index + 1, installmentTotal: installments })))
+    await db.insert(transactions).values(splitInstallments(parsed.amount, installments).map((amountCents, index) => ({ userId, description: parsed.description, type: parsed.type, date: dates[index], amountCents, categoryId: parsed.categoryId, accountId, notes, installmentGroup, installmentNumber: index + 1, installmentTotal: installments })))
     revalidatePath('/')
     return
   }
   const values=[];const [year,monthIndex,day]=parsed.date.split('-').map(Number);let offset=0
-  do {const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(recurrenceEnd&&occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId:parsed.categoryId,accountId,recurring});offset++;if(offset>120)throw new Error('O período recorrente deve ter no máximo 120 meses')}while(recurrenceEnd)
+  do {const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(recurrenceEnd&&occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId:parsed.categoryId,accountId,notes,recurring});offset++;if(offset>120)throw new Error('O período recorrente deve ter no máximo 120 meses')}while(recurrenceEnd)
   await db.insert(transactions).values(values)
   revalidatePath('/')
 }
@@ -96,12 +103,13 @@ export async function updateTransaction(id: number, form: FormData) {
     const category = await db.select({ id: categories.id, type: categories.type }).from(categories).where(and(eq(categories.id, categoryId), eq(categories.userId, userId))).limit(1)
     if (!category[0] || category[0].type !== parsed.type) categoryId = null
   }
+  const notes = parseNotes(form)
   const accountId = (await getOwnedAccount(form.get('accountId'), userId))?.id ?? null
   const newImage = await saveTransactionImage(form.get('image'), userId)
   const removeImage = form.get('removeImage') === 'true'
-  await db.update(transactions).set({ description: parsed.description, type: parsed.type, date: parsed.date, amountCents: parsed.amount, categoryId, accountId, recurring, imagePath: newImage??(removeImage?null:existing[0].imagePath) }).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId)))
+  await db.update(transactions).set({ description: parsed.description, type: parsed.type, date: parsed.date, amountCents: parsed.amount, categoryId, accountId, notes, recurring, imagePath: newImage??(removeImage?null:existing[0].imagePath) }).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId)))
   if ((newImage || removeImage) && existing[0].imagePath) await removeTransactionImage(existing[0].imagePath,userId)
-  if(recurrenceEnd){const values=[];const [year,monthIndex,day]=parsed.date.split('-').map(Number);for(let offset=1;offset<=120;offset++){const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId,accountId,recurring:true})}if(values.length)await db.insert(transactions).values(values)}
+  if(recurrenceEnd){const values=[];const [year,monthIndex,day]=parsed.date.split('-').map(Number);for(let offset=1;offset<=120;offset++){const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId,accountId,notes,recurring:true})}if(values.length)await db.insert(transactions).values(values)}
   revalidatePath('/')
 }
 export async function deleteTransaction(id: number) { const userId = await getUserId(); const safeId = z.number().int().positive().parse(id); const existing=await db.select().from(transactions).where(and(eq(transactions.id,safeId),eq(transactions.userId,userId))).limit(1); if(!existing[0])throw new Error('Transação não encontrada'); await db.delete(transactions).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId))); await removeTransactionImage(existing[0].imagePath,userId); revalidatePath('/') }
@@ -189,7 +197,8 @@ export async function importTransactions(input:unknown){
     await db.insert(categories).values(missing.map(item=>({userId,name:item.name,type:item.type}))).onConflictDoNothing()
     userCategories=await db.select().from(categories).where(eq(categories.userId,userId))
   }
-  const values=rows.map(row=>({userId,description:row.description,type:row.type,date:row.date,amountCents:row.amountCents,categoryId:(matchCategory(row,userCategories)??(row.categoryName?.trim()?undefined:findSuggestedCategory(row.description,row.type,userCategories)))?.id??null}))
+  const suggest=await categorySuggester(userId,userCategories)
+  const values=rows.map(row=>({userId,description:row.description,type:row.type,date:row.date,amountCents:row.amountCents,categoryId:(matchCategory(row,userCategories)??(row.categoryName?.trim()?undefined:suggest(row.description,row.type)))?.id??null}))
   await db.insert(transactions).values(values)
   revalidatePath('/')
   return{count:values.length,skipped,newCategories:missing.length}

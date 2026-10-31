@@ -201,6 +201,9 @@ export function FormDialog({
                   />
                 </Field>
               </div>
+              <Field label="Observações (opcional)">
+                <Input name="notes" maxLength={500} placeholder="Ex.: presente de aniversário" />
+              </Field>
               {accounts.length > 0 && (
                 <div className="grid grid-cols-2 gap-4">
                   <Field label="Conta ou cartão">
