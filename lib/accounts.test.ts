@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addMonthsToDate, getAccountBalance, getCardInvoices, getInvoiceClosingDate, getInstallmentDates, getInvoiceDueDate, splitInstallments } from './accounts'
+import { addMonthsToDate, applyGoalBalances, getAccountBalance, getCardColor, getCardInvoices, getInvoiceClosingDate, getInstallmentDates, getInvoiceDueDate, splitInstallments } from './accounts'
 
 const expense = (date: string, amountCents: number, accountId = 1) => ({ type: 'expense', amountCents, date, accountId })
 const income = (date: string, amountCents: number, accountId = 1) => ({ type: 'income', amountCents, date, accountId })
@@ -107,5 +107,24 @@ describe('getInstallmentDates', () => {
     closings.slice(1).forEach((closing, index) => {
       expect(closing.slice(0, 7)).toBe(addMonthsToDate(`${closings[index].slice(0, 7)}-01`, 1).slice(0, 7))
     })
+  })
+})
+
+describe('getCardColor', () => {
+  it.each([['Nubank', 'nubank'], ['Nubanck', 'nubank'], ['nu bank', 'nubank'], ['Itaú Click', 'itau'], ['Cartão BB', 'bb'], ['C6', 'c6'], ['Mercado Livre', 'mercadopago'], ['Internacional', 'graphite'], ['Meu cartão', 'graphite'], ['', 'graphite']])('%s → %s', (name, color) => {
+    expect(getCardColor(null, name)).toBe(color)
+  })
+  it('a cor escolhida vale mais que o nome, e cor desconhecida é ignorada', () => {
+    expect(getCardColor('c6', 'Nubank')).toBe('c6')
+    expect(getCardColor('roxo', 'Nubank')).toBe('nubank')
+  })
+})
+
+describe('applyGoalBalances', () => {
+  const accounts = [{ id: 1, initialBalanceCents: 10000 }, { id: 2, initialBalanceCents: -500 }]
+  it('usa o saldo da conta, nunca abaixo de zero, e mantém as metas sem conta', () => {
+    const goals = [{ currentCents: 7, accountId: 1 }, { currentCents: 7, accountId: 2 }, { currentCents: 7, accountId: null }, { currentCents: 7, accountId: 99 }]
+    const result = applyGoalBalances(goals, accounts, [expense('2026-10-01', 2000)], [payment('2026-10-02', 300)], '2026-10-30')
+    expect(result.map(goal => goal.currentCents)).toEqual([8300, 0, 7, 7])
   })
 })

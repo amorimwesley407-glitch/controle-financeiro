@@ -10,11 +10,12 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Budget, Category, Empty, Field, GoalType, brl } from "@/components/finance/shared";
-import { FormDialog } from "@/components/finance/form-dialog";
+import { Account, Budget, Category, Empty, Field, GoalType, brl } from "@/components/finance/shared";
+import { FormDialog, GoalAccountField } from "@/components/finance/form-dialog";
 
-export function EditGoalDialog({ goal }: { goal: GoalType }) {
+export function EditGoalDialog({ goal, accounts = [] }: { goal: GoalType; accounts?: Account[] }) {
   const [open, setOpen] = useState(false);
+  const [accountId, setAccountId] = useState(goal.accountId ? String(goal.accountId) : "none");
   const [pending, startTransition] = useTransition();
   function submit(form: FormData) {
     startTransition(async () => {
@@ -66,17 +67,20 @@ export function EditGoalDialog({ goal }: { goal: GoalType }) {
                 required
               />
             </Field>
-            <Field label="Valor atual">
-              <Input
-                name="current"
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue={(goal.currentCents / 100).toFixed(2)}
-                required
-              />
-            </Field>
+            {accountId === "none" && (
+              <Field label="Valor atual">
+                <Input
+                  name="current"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={(Math.min(goal.currentCents, goal.targetCents) / 100).toFixed(2)}
+                  required
+                />
+              </Field>
+            )}
           </div>
+          <GoalAccountField accounts={accounts} value={accountId} onChange={setAccountId} />
           <Field label="Prazo">
             <Input
               name="deadline"
@@ -176,10 +180,12 @@ export function PlanningView({
   goals,
   budgets,
   categories,
+  accounts = [],
 }: {
   goals: GoalType[];
   budgets: Budget[];
   categories: Category[];
+  accounts?: Account[];
 }) {
   async function removeGoal(goal: GoalType) {
     if (!window.confirm(`Excluir a meta “${goal.name}”?`)) return;
@@ -218,7 +224,7 @@ export function PlanningView({
               Acompanhe o progresso dos objetivos
             </CardDescription>
           </div>
-          <FormDialog type="goal" categories={categories} />
+          <FormDialog type="goal" categories={categories} accounts={accounts} />
         </CardHeader>
         <CardContent className="flex flex-col divide-y">
           {goals.length ? (
@@ -242,7 +248,7 @@ export function PlanningView({
                         <span className="mr-1 font-mono text-sm font-semibold">
                           {p}%
                         </span>
-                        <EditGoalDialog goal={g} />
+                        <EditGoalDialog goal={g} accounts={accounts} />
                         <Button
                           variant="ghost"
                           size="icon-sm"
@@ -257,6 +263,7 @@ export function PlanningView({
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                       <span>
                         {brl(g.currentCents)} de {brl(g.targetCents)}
+                        {g.accountId && ` · saldo de ${accounts.find((account) => account.id === g.accountId)?.name ?? "conta"}`}
                       </span>
                       {g.deadline && (
                         <span>

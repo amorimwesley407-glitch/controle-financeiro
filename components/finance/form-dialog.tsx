@@ -11,6 +11,32 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { toast } from "sonner";
 import { Account, Category, Field, Quote, brl, categoryIconOptions, categoryIcons, investmentOptions, isFixedIncomeType, isStreamingCategory, streamingServiceImages, streamingServices } from "@/components/finance/shared";
 
+/** Escolha da conta que a meta acompanha. Cartões ficam de fora porque o saldo deles é dívida. */
+export function GoalAccountField({ accounts, value, onChange }: { accounts: Account[]; value: string; onChange: (value: string) => void }) {
+  const options = accounts.filter((account) => account.kind !== "credit_card");
+  if (!options.length) return null;
+  return (
+    <Field label="Acompanhar o saldo de uma conta (opcional)">
+      <Select name="accountId" value={value} onValueChange={(next) => onChange(String(next))}>
+        <SelectTrigger className="w-full">
+          <SelectValue>
+            {(selected: string) => options.find((account) => String(account.id) === selected)?.name ?? "Não, informar o valor à mão"}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            <SelectItem value="none">Não, informar o valor à mão</SelectItem>
+            {options.map((account) => (
+              <SelectItem key={account.id} value={String(account.id)}>{account.name}</SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+      <p className="text-xs text-muted-foreground">O progresso da meta passa a ser o saldo atual dessa conta.</p>
+    </Field>
+  );
+}
+
 export function FormDialog({
   type,
   categories,
@@ -25,6 +51,7 @@ export function FormDialog({
   const [open, setOpen] = useState(false);
   const [recurring, setRecurring] = useState(false);
   const [accountId, setAccountId] = useState("none");
+  const [goalAccountId, setGoalAccountId] = useState("none");
   const [installments, setInstallments] = useState("1");
   const [transactionType, setTransactionType] = useState("expense");
   const [transactionCategoryId, setTransactionCategoryId] = useState("none");
@@ -351,17 +378,20 @@ export function FormDialog({
                     required
                   />
                 </Field>
-                <Field label="Valor atual">
-                  <Input
-                    name="current"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    defaultValue="0"
-                    required
-                  />
-                </Field>
+                {goalAccountId === "none" && (
+                  <Field label="Valor atual">
+                    <Input
+                      name="current"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      defaultValue="0"
+                      required
+                    />
+                  </Field>
+                )}
               </div>
+              <GoalAccountField accounts={accounts} value={goalAccountId} onChange={setGoalAccountId} />
               <Field label="Prazo">
                 <Input name="deadline" type="date" />
               </Field>
