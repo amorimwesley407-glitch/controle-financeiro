@@ -80,18 +80,18 @@ describe.skipIf(!testDatabaseUrl)('isolamento entre usuários', () => {
   it('não deixa alterar nem apagar os registros de outro usuário', async () => {
     const before = await bobRows()
     const attempts = [
-      actions.updateTransaction(bob.transactionId, form({ description: 'Invadido', type: 'expense', date: '2026-10-01', amount: '1' })),
-      actions.deleteTransaction(bob.transactionId),
-      actions.updateCategory(bob.categoryId, form({ name: 'Invadido', type: 'expense' })),
-      actions.deleteCategory(bob.categoryId),
-      actions.updateGoal(bob.goalId, form({ name: 'Invadido', target: '1', current: '0', deadline: '' })),
-      actions.deleteGoal(bob.goalId),
-      actions.updateBudget(bob.budgetId, form({ name: 'Invadido', limit: '1', month: '2026-10', categoryId: String(bob.categoryId) })),
-      actions.deleteBudget(bob.budgetId),
-      actions.updateHolding(bob.holdingId, form({ assetType: 'stock', symbol: 'VALE3', quantity: '1', averageCost: '1' })),
-      actions.deleteHolding(bob.holdingId),
+      () => actions.updateTransaction(bob.transactionId, form({ description: 'Invadido', type: 'expense', date: '2026-10-01', amount: '1' })),
+      () => actions.deleteTransaction(bob.transactionId),
+      () => actions.updateCategory(bob.categoryId, form({ name: 'Invadido', type: 'expense' })),
+      () => actions.deleteCategory(bob.categoryId),
+      () => actions.updateGoal(bob.goalId, form({ name: 'Invadido', target: '1', current: '0', deadline: '' })),
+      () => actions.deleteGoal(bob.goalId),
+      () => actions.updateBudget(bob.budgetId, form({ name: 'Invadido', limit: '1', month: '2026-10', categoryId: String(bob.categoryId) })),
+      () => actions.deleteBudget(bob.budgetId),
+      () => actions.updateHolding(bob.holdingId, form({ assetType: 'stock', symbol: 'VALE3', quantity: '1', averageCost: '1' })),
+      () => actions.deleteHolding(bob.holdingId),
     ]
-    for (const attempt of attempts) await expect(attempt).rejects.toThrow()
+    for (const attempt of attempts) await expect(attempt()).rejects.toThrow()
     expect(await bobRows()).toEqual(before)
   })
 
