@@ -3,7 +3,8 @@
 import { useMemo, useState, useTransition } from "react";
 import { ArrowRightLeft, CreditCard, Landmark, Pencil, PiggyBank, Plus, Trash2, Wallet } from "lucide-react";
 import { addAccount, addTransfer, deleteAccount, deleteTransfer, updateAccount } from "@/app/actions/finance";
-import { getAccountBalance, getCardInvoices, type InvoiceStatus } from "@/lib/accounts";
+import { CARD_BRANDS, CARD_COLORS, getAccountBalance, getCardColor, getCardInvoices, type InvoiceStatus } from "@/lib/accounts";
+import { CreditCardVisual } from "@/components/finance/credit-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +37,22 @@ function errorMessage(error: unknown) {
 function AccountDialog({ account }: { account?: Account }) {
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState(account?.kind ?? "checking");
+  const [name, setName] = useState(account?.name ?? "");
+  const [brand, setBrand] = useState(account?.cardBrand ?? "none");
+  const [chosenColor, setChosenColor] = useState(account?.cardColor ?? "");
+  const [lastDigits, setLastDigits] = useState(account?.cardLastDigits ?? "");
+  const color = getCardColor(chosenColor, name);
+  // A janela fica montada entre as aberturas: sem isto, um cadastro novo herdaria os dados do anterior.
+  function changeOpen(next: boolean) {
+    if (next) {
+      setKind(account?.kind ?? "checking");
+      setName(account?.name ?? "");
+      setBrand(account?.cardBrand ?? "none");
+      setChosenColor(account?.cardColor ?? "");
+      setLastDigits(account?.cardLastDigits ?? "");
+    }
+    setOpen(next);
+  }
   const [pending, startTransition] = useTransition();
   const isCard = kind === "credit_card";
   const initialValue = account ? Math.abs(account.initialBalanceCents) / 100 : 0;
@@ -52,7 +69,7 @@ function AccountDialog({ account }: { account?: Account }) {
     });
   }
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger
         render={
           account ? (
@@ -71,7 +88,7 @@ function AccountDialog({ account }: { account?: Account }) {
         </DialogHeader>
         <form action={submit} className="flex flex-col gap-4">
           <Field label="Nome">
-            <Input name="name" defaultValue={account?.name} placeholder="Ex.: Nubank" required />
+            <Input name="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex.: Nubank" required />
           </Field>
           <Field label="Tipo">
             <Select name="kind" value={kind} onValueChange={(value) => setKind(String(value))}>
@@ -88,14 +105,63 @@ function AccountDialog({ account }: { account?: Account }) {
             </Select>
           </Field>
           {isCard && (
-            <div className="grid grid-cols-2 gap-4">
+            <>
+              <div className="mx-auto w-full max-w-72">
+                <CreditCardVisual name={name} brand={brand} color={color} lastDigits={lastDigits} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Banco e cor">
+                  <Select name="cardColor" value={color} onValueChange={(value) => setChosenColor(String(value))}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue>{(value: string) => CARD_COLORS[value as keyof typeof CARD_COLORS]?.label}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {Object.entries(CARD_COLORS).map(([value, { label }]) => (
+                          <SelectItem key={value} value={value}>{label}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Bandeira">
+                  <Select name="cardBrand" value={brand} onValueChange={(value) => setBrand(String(value))}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue>{(value: string) => CARD_BRANDS[value as keyof typeof CARD_BRANDS] ?? "Não informar"}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="none">Não informar</SelectItem>
+                        {Object.entries(CARD_BRANDS).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>{label}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+              <Field label="4 últimos dígitos (opcional)">
+                <Input
+                  name="cardLastDigits"
+                  value={lastDigits}
+                  onChange={(event) => setLastDigits(event.target.value.replace(/\D/g, "").slice(0, 4))}
+                  inputMode="numeric"
+                  pattern="[0-9]{4}"
+                  maxLength={4}
+                  autoComplete="off"
+                  placeholder="1234"
+                />
+                <p className="text-xs text-muted-foreground">Só para identificar o cartão. Nunca informe o número completo nem o código de segurança.</p>
+              </Field>
+              <div className="grid grid-cols-2 gap-4">
               <Field label="Dia do fechamento">
                 <Input name="closingDay" type="number" min="1" max="31" defaultValue={account?.closingDay ?? undefined} required />
               </Field>
               <Field label="Dia do vencimento">
                 <Input name="dueDay" type="number" min="1" max="31" defaultValue={account?.dueDay ?? undefined} required />
               </Field>
-            </div>
+              </div>
+            </>
           )}
           <Field label={isCard ? "Dívida atual, fora dos lançamentos" : "Saldo inicial"}>
             <Input
@@ -329,6 +395,24 @@ export function AccountsView({ accounts, transfers, transactions, currentDate }:
           {accounts.map((account) => {
             const { label, icon: Icon } = kindOf(account.kind);
             const balance = balances.get(account.id) ?? 0;
+            if (account.kind === "credit_card")
+              return (
+                <div key={account.id} className="flex flex-col gap-2">
+                  <CreditCardVisual name={account.name} brand={account.cardBrand} color={account.cardColor} lastDigits={account.cardLastDigits} />
+                  <div className="flex items-center justify-between gap-2 px-1">
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">Saldo do cartão</p>
+                      <p className={`font-mono font-semibold ${balance < 0 ? "text-red-600 dark:text-red-400" : ""}`}>{brl(balance)}</p>
+                    </div>
+                    <div className="flex shrink-0">
+                      <AccountDialog account={account} />
+                      <Button variant="ghost" size="icon-sm" aria-label={`Excluir ${account.name}`} onClick={() => removeAccount(account)}>
+                        <Trash2 />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
             return (
               <Card key={account.id}>
                 <CardContent className="flex items-start justify-between gap-3">

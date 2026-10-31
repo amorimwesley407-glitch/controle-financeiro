@@ -6,6 +6,7 @@ import { db } from '@/lib/db'
 import { budgets, categories, financialAccounts, goals, holdings, transactions, transfers } from '@/lib/db/schema'
 import { FinanceDashboard } from '@/components/finance-dashboard'
 import { signImageUrls } from '@/lib/storage'
+import { applyGoalBalances } from '@/lib/accounts'
 import { createDefaultCategories } from '@/lib/default-categories'
 
 async function getUserCategories(userId:string){
@@ -22,5 +23,5 @@ export default async function Page(){
  const imageUrls=await signImageUrls([current.user.image,...rawCats.map(item=>item.imagePath),...tx.map(item=>item.imagePath)],current.user.id)
  const cats=rawCats.map(item=>({...item,imagePath:item.imagePath?imageUrls.get(item.imagePath)??null:null}))
  const enrichedTransactions=tx.map(item=>{const category=cats.find(entry=>entry.id===item.categoryId);return {...item,imagePath:item.imagePath?imageUrls.get(item.imagePath)??null:null,categoryName:category?.name,categoryIcon:category?.icon,categoryImage:category?.imagePath,accountName:userAccounts.find(entry=>entry.id===item.accountId)?.name}})
- return <FinanceDashboard currentDate={today} user={{name:current.user.name,email:current.user.email,image:current.user.image?imageUrls.get(current.user.image)??null:null}} transactions={enrichedTransactions} categories={cats} goals={userGoals} budgets={userBudgets} holdings={userHoldings} accounts={userAccounts} transfers={userTransfers}/>
+ return <FinanceDashboard currentDate={today} user={{name:current.user.name,email:current.user.email,image:current.user.image?imageUrls.get(current.user.image)??null:null}} transactions={enrichedTransactions} categories={cats} goals={applyGoalBalances(userGoals,userAccounts,tx,userTransfers,today)} budgets={userBudgets} holdings={userHoldings} accounts={userAccounts} transfers={userTransfers}/>
 }

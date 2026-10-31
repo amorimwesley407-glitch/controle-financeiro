@@ -397,6 +397,7 @@ export function FinanceDashboard({
               <FinancialGoalsOrbit goals={goals} />
               <FixedExpensesCard transactions={transactions} currentDate={currentDate} />
               <PlanningView
+                accounts={accounts}
                 goals={goals}
                 budgets={budgets}
                 categories={categories}

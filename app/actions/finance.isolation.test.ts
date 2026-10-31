@@ -80,18 +80,18 @@ describe.skipIf(!testDatabaseUrl)('isolamento entre usuários', () => {
   it('não deixa alterar nem apagar os registros de outro usuário', async () => {
     const before = await bobRows()
     const attempts = [
-      actions.updateTransaction(bob.transactionId, form({ description: 'Invadido', type: 'expense', date: '2026-10-01', amount: '1' })),
-      actions.deleteTransaction(bob.transactionId),
-      actions.updateCategory(bob.categoryId, form({ name: 'Invadido', type: 'expense' })),
-      actions.deleteCategory(bob.categoryId),
-      actions.updateGoal(bob.goalId, form({ name: 'Invadido', target: '1', current: '0', deadline: '' })),
-      actions.deleteGoal(bob.goalId),
-      actions.updateBudget(bob.budgetId, form({ name: 'Invadido', limit: '1', month: '2026-10', categoryId: String(bob.categoryId) })),
-      actions.deleteBudget(bob.budgetId),
-      actions.updateHolding(bob.holdingId, form({ assetType: 'stock', symbol: 'VALE3', quantity: '1', averageCost: '1' })),
-      actions.deleteHolding(bob.holdingId),
+      () => actions.updateTransaction(bob.transactionId, form({ description: 'Invadido', type: 'expense', date: '2026-10-01', amount: '1' })),
+      () => actions.deleteTransaction(bob.transactionId),
+      () => actions.updateCategory(bob.categoryId, form({ name: 'Invadido', type: 'expense' })),
+      () => actions.deleteCategory(bob.categoryId),
+      () => actions.updateGoal(bob.goalId, form({ name: 'Invadido', target: '1', current: '0', deadline: '' })),
+      () => actions.deleteGoal(bob.goalId),
+      () => actions.updateBudget(bob.budgetId, form({ name: 'Invadido', limit: '1', month: '2026-10', categoryId: String(bob.categoryId) })),
+      () => actions.deleteBudget(bob.budgetId),
+      () => actions.updateHolding(bob.holdingId, form({ assetType: 'stock', symbol: 'VALE3', quantity: '1', averageCost: '1' })),
+      () => actions.deleteHolding(bob.holdingId),
     ]
-    for (const attempt of attempts) await expect(attempt).rejects.toThrow()
+    for (const attempt of attempts) await expect(attempt()).rejects.toThrow()
     expect(await bobRows()).toEqual(before)
   })
 
@@ -165,6 +165,35 @@ describe.skipIf(!testDatabaseUrl)('isolamento entre usuários', () => {
         { date: '2027-03-01', amountCents: 3333 },
         { date: '2027-03-31', amountCents: 3333 },
       ])
+    })
+  })
+
+  describe('metas ligadas a contas e aparência do cartão', () => {
+    const goalForm = (fields: Record<string, string>) => form({ name: 'Reserva', target: '1000', current: '0', deadline: '', ...fields })
+
+    it('liga a meta só a uma conta do próprio usuário, e nunca a um cartão', async () => {
+      const [{ id: bobAccount }] = await sql`INSERT INTO "financial_accounts" ("userId", "name", "kind") VALUES (${BOB}, 'Poupança', 'savings') RETURNING "id"`
+      const [{ id: card }] = await sql`INSERT INTO "financial_accounts" ("userId", "name", "kind", "closingDay", "dueDay") VALUES (${ALICE}, 'Cartão', 'credit_card', 10, 20) RETURNING "id"`
+      const [{ id: mine }] = await sql`INSERT INTO "financial_accounts" ("userId", "name", "kind") VALUES (${ALICE}, 'Poupança', 'savings') RETURNING "id"`
+      await expect(actions.addGoal(goalForm({ accountId: String(bobAccount) }))).rejects.toThrow('Conta inválida')
+      await expect(actions.addGoal(goalForm({ accountId: String(card) }))).rejects.toThrow('cartão')
+
+      await actions.addGoal(form({ name: 'Reserva', target: '1000', deadline: '', accountId: String(mine) }))
+      const [goal] = await sql`SELECT "id", "accountId", "currentCents" FROM "goals" WHERE "userId" = ${ALICE}`
+      expect(goal).toMatchObject({ accountId: mine, currentCents: 0 })
+
+      await expect(actions.updateGoal(goal.id, goalForm({ accountId: String(bobAccount) }))).rejects.toThrow('Conta inválida')
+      await actions.updateGoal(goal.id, goalForm({ current: '50' }))
+      expect((await sql`SELECT "accountId", "currentCents" FROM "goals" WHERE "id" = ${goal.id}`)[0]).toEqual({ accountId: null, currentCents: 5000 })
+    })
+
+    it('salva a aparência do cartão e recusa número completo ou valores desconhecidos', async () => {
+      const card = (fields: Record<string, string>) => form({ name: 'Roxinho', kind: 'credit_card', initialBalance: '', closingDay: '10', dueDay: '20', ...fields })
+      await actions.addAccount(card({ cardBrand: 'mastercard', cardColor: 'nubank', cardLastDigits: '1234' }))
+      expect((await sql`SELECT "cardBrand", "cardColor", "cardLastDigits" FROM "financial_accounts" WHERE "name" = 'Roxinho'`)[0]).toEqual({ cardBrand: 'mastercard', cardColor: 'nubank', cardLastDigits: '1234' })
+      await expect(actions.addAccount(card({ name: 'Outro', cardLastDigits: '4111111111111111' }))).rejects.toThrow()
+      await expect(actions.addAccount(card({ name: 'Outro', cardBrand: 'banana' }))).rejects.toThrow()
+      await expect(actions.addAccount(card({ name: 'Outro', cardColor: 'banana' }))).rejects.toThrow()
     })
   })
 

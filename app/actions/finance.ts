@@ -6,7 +6,7 @@ import { and, between, eq, or } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { budgets, categories, financialAccounts, goals, holdings, transactions, transfers, user as users } from '@/lib/db/schema'
-import { getInstallmentDates, splitInstallments } from '@/lib/accounts'
+import { CARD_BRANDS, CARD_COLORS, getInstallmentDates, splitInstallments } from '@/lib/accounts'
 import { findMissingCategories, matchCategory, MAX_NEW_CATEGORIES_PER_IMPORT, skipExistingTransactions } from '@/lib/import'
 import { findSuggestedCategory } from '@/lib/categorize'
 import { parseMoneyToCents } from '@/lib/money'
@@ -114,12 +114,19 @@ export async function deleteInstallments(group: string) {
   revalidatePath('/')
 }
 
+function parseCardStyle(form: FormData) {
+  const optional = (value: FormDataEntryValue | null) => (!value || value === 'none' ? null : String(value))
+  const brand = z.enum(Object.keys(CARD_BRANDS) as [string, ...string[]]).nullable().parse(optional(form.get('cardBrand')))
+  const color = z.enum(Object.keys(CARD_COLORS) as [string, ...string[]]).nullable().parse(optional(form.get('cardColor')))
+  const lastDigits = z.string().regex(/^\d{4}$/, 'Informe só os 4 últimos dígitos do cartão').nullable().parse(optional(form.get('cardLastDigits')))
+  return { cardBrand: brand, cardColor: color, cardLastDigits: lastDigits }
+}
 function parseAccountForm(form: FormData) {
   const parsed = z.object({ name: z.string().trim().min(2).max(40), kind: z.enum(['checking', 'savings', 'cash', 'credit_card']), initialBalance: z.preprocess(value => parseMoneyToCents(value || 0), z.number().int().safe()) }).parse({ name: form.get('name'), kind: form.get('kind'), initialBalance: form.get('initialBalance') })
-  if (parsed.kind !== 'credit_card') return { name: parsed.name, kind: parsed.kind, initialBalanceCents: parsed.initialBalance, closingDay: null, dueDay: null }
+  if (parsed.kind !== 'credit_card') return { name: parsed.name, kind: parsed.kind, initialBalanceCents: parsed.initialBalance, closingDay: null, dueDay: null, cardBrand: null, cardColor: null, cardLastDigits: null }
   const day = z.coerce.number().int().min(1).max(31)
   // No cartão o formulário pede a dívida já existente, que entra no saldo como valor negativo.
-  return { name: parsed.name, kind: parsed.kind, initialBalanceCents: -Math.abs(parsed.initialBalance), closingDay: day.parse(form.get('closingDay')), dueDay: day.parse(form.get('dueDay')) }
+  return { name: parsed.name, kind: parsed.kind, initialBalanceCents: -Math.abs(parsed.initialBalance), closingDay: day.parse(form.get('closingDay')), dueDay: day.parse(form.get('dueDay')), ...parseCardStyle(form) }
 }
 export async function addAccount(form: FormData) {
   const userId = await getUserId()
@@ -194,9 +201,15 @@ export async function importTransactions(input:unknown){
   revalidatePath('/')
   return{count:values.length,skipped,newCategories:missing.length}
 }
-export async function addGoal(form: FormData) { const userId = await getUserId(); const parsed = z.object({name:z.string().trim().min(2).max(50),target:money,current:nonNegativeMoney,deadline:z.union([date,z.literal('')])}).parse({name:form.get('name'),target:form.get('target'),current:form.get('current'),deadline:textValue(form.get('deadline'))}); if(parsed.current>parsed.target) throw new Error('O valor atual não pode superar o objetivo'); await db.insert(goals).values({ userId, name:parsed.name, targetCents:parsed.target, currentCents:parsed.current, deadline:parsed.deadline || null }); revalidatePath('/') }
+/** Conta que a meta acompanha. Cartão não serve: o saldo dele é dívida, não dinheiro guardado. */
+async function getGoalAccount(value: FormDataEntryValue | null, userId: string) {
+  const account = await getOwnedAccount(value, userId)
+  if (account?.kind === 'credit_card') throw new Error('Uma meta não pode acompanhar um cartão de crédito')
+  return account
+}
+export async function addGoal(form: FormData) { const userId = await getUserId(); const parsed = z.object({name:z.string().trim().min(2).max(50),target:money,current:nonNegativeMoney,deadline:z.union([date,z.literal('')])}).parse({name:form.get('name'),target:form.get('target'),current:form.get('current'),deadline:textValue(form.get('deadline'))}); const account=await getGoalAccount(form.get('accountId'),userId); if(!account&&parsed.current>parsed.target) throw new Error('O valor atual não pode superar o objetivo'); await db.insert(goals).values({ userId, name:parsed.name, targetCents:parsed.target, currentCents:account?0:parsed.current, accountId:account?.id??null, deadline:parsed.deadline || null }); revalidatePath('/') }
 export async function addBudget(form: FormData) { const userId = await getUserId(); const parsed=z.object({name:z.string().trim().min(2).max(50),limit:money,month,categoryId:z.coerce.number().int().positive()}).parse({name:form.get('name'),limit:form.get('limit'),month:form.get('month'),categoryId:form.get('categoryId')});const category=await db.select({id:categories.id,type:categories.type}).from(categories).where(and(eq(categories.id,parsed.categoryId),eq(categories.userId,userId))).limit(1);if(!category[0]||category[0].type!=='expense')throw new Error('Selecione uma categoria de despesa válida'); await db.insert(budgets).values({ userId, name:parsed.name, limitCents:parsed.limit, month:parsed.month,categoryId:parsed.categoryId }); revalidatePath('/') }
-export async function updateGoal(id:number,form:FormData){const userId=await getUserId();const safeId=z.number().int().positive().parse(id);const parsed=z.object({name:z.string().trim().min(2).max(50),target:money,current:nonNegativeMoney,deadline:z.union([date,z.literal('')])}).parse({name:form.get('name'),target:form.get('target'),current:form.get('current'),deadline:textValue(form.get('deadline'))});if(parsed.current>parsed.target)throw new Error('O valor atual não pode superar o objetivo');const result=await db.update(goals).set({name:parsed.name,targetCents:parsed.target,currentCents:parsed.current,deadline:parsed.deadline||null}).where(and(eq(goals.id,safeId),eq(goals.userId,userId))).returning({id:goals.id});if(!result.length)throw new Error('Meta não encontrada');revalidatePath('/')}
+export async function updateGoal(id:number,form:FormData){const userId=await getUserId();const safeId=z.number().int().positive().parse(id);const parsed=z.object({name:z.string().trim().min(2).max(50),target:money,current:nonNegativeMoney,deadline:z.union([date,z.literal('')])}).parse({name:form.get('name'),target:form.get('target'),current:form.get('current'),deadline:textValue(form.get('deadline'))});const account=await getGoalAccount(form.get('accountId'),userId);if(!account&&parsed.current>parsed.target)throw new Error('O valor atual não pode superar o objetivo');const result=await db.update(goals).set({name:parsed.name,targetCents:parsed.target,currentCents:account?undefined:parsed.current,accountId:account?.id??null,deadline:parsed.deadline||null}).where(and(eq(goals.id,safeId),eq(goals.userId,userId))).returning({id:goals.id});if(!result.length)throw new Error('Meta não encontrada');revalidatePath('/')}
 export async function deleteGoal(id:number){const userId=await getUserId();const safeId=z.number().int().positive().parse(id);const result=await db.delete(goals).where(and(eq(goals.id,safeId),eq(goals.userId,userId))).returning({id:goals.id});if(!result.length)throw new Error('Meta não encontrada');revalidatePath('/')}
 export async function updateBudget(id:number,form:FormData){const userId=await getUserId();const safeId=z.number().int().positive().parse(id);const parsed=z.object({name:z.string().trim().min(2).max(50),limit:money,month,categoryId:z.coerce.number().int().positive()}).parse({name:form.get('name'),limit:form.get('limit'),month:form.get('month'),categoryId:form.get('categoryId')});const category=await db.select({id:categories.id,type:categories.type}).from(categories).where(and(eq(categories.id,parsed.categoryId),eq(categories.userId,userId))).limit(1);if(!category[0]||category[0].type!=='expense')throw new Error('Selecione uma categoria de despesa válida');const result=await db.update(budgets).set({name:parsed.name,limitCents:parsed.limit,month:parsed.month,categoryId:parsed.categoryId}).where(and(eq(budgets.id,safeId),eq(budgets.userId,userId))).returning({id:budgets.id});if(!result.length)throw new Error('Orçamento não encontrado');revalidatePath('/')}
 export async function deleteBudget(id:number){const userId=await getUserId();const safeId=z.number().int().positive().parse(id);const result=await db.delete(budgets).where(and(eq(budgets.id,safeId),eq(budgets.userId,userId))).returning({id:budgets.id});if(!result.length)throw new Error('Orçamento não encontrado');revalidatePath('/')}
