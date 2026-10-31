@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm'
 import { removeImage } from '@/lib/storage'
 import { createDefaultCategories } from '@/lib/default-categories'
 import { blockAuthImageInput } from '@/lib/auth-image-policy'
+import { sendPasswordResetEmail } from '@/lib/email'
 
 const toOrigin = (host: string | undefined) => {
   if (!host) return null
@@ -33,7 +34,17 @@ export const auth = betterAuth({
     ...vercelOrigins,
   ],
   hooks: { before: blockAuthImageInput },
-  emailAndPassword: { enabled: true, autoSignIn: true, minPasswordLength: 12, maxPasswordLength: 128 },
+  emailAndPassword: {
+    enabled: true,
+    autoSignIn: true,
+    minPasswordLength: 12,
+    maxPasswordLength: 128,
+    revokeSessionsOnPasswordReset: true,
+    // Falha de envio não vira erro na tela: a resposta não pode revelar se o e-mail tem conta.
+    sendResetPassword: async ({ user, url }) => {
+      await sendPasswordResetEmail(user.email, url).catch(error => console.error('Recuperação de senha:', error instanceof Error ? error.message : 'erro desconhecido'))
+    },
+  },
   rateLimit: {
     enabled: true,
     storage: 'database',
@@ -42,6 +53,8 @@ export const auth = betterAuth({
     customRules: {
       '/sign-in/email': { window: 60, max: 5 },
       '/sign-up/email': { window: 60 * 60, max: 3 },
+      '/request-password-reset': { window: 60 * 60, max: 3 },
+      '/reset-password': { window: 60 * 60, max: 10 },
     },
   },
   user: {
