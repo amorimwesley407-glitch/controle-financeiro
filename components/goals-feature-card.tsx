@@ -3,9 +3,10 @@
 import { CalendarDays, Check, PiggyBank, Target, UsersRound } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
+import { brl } from '@/components/finance/shared'
 
 type Goal={id:number;name:string;targetCents:number;currentCents:number;deadline:string|null}
-const money=(cents:number)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}).format(cents/100)
+const money=(cents:number)=>brl(cents,{maximumFractionDigits:0})
 
 export function GoalsFeatureCard({goals}:{goals:Goal[]}){
  const featured=[...goals].sort((a,b)=>{const ap=a.targetCents?a.currentCents/a.targetCents:0;const bp=b.targetCents?b.currentCents/b.targetCents:0;return bp-ap}).slice(0,2)

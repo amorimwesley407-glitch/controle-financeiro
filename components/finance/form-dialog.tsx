@@ -117,11 +117,13 @@ export function FormDialog({
           <Button
             variant={type === "transaction" ? "default" : "outline"}
             size="sm"
+            aria-label={meta[0]}
           />
         }
       >
         <Plus data-icon="inline-start" />
-        {meta[0]}
+        {/* No celular o cabeçalho não tem espaço: o botão de novo lançamento fica só com o "+". */}
+        <span className={type === "transaction" ? "hidden sm:inline" : undefined}>{meta[0]}</span>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

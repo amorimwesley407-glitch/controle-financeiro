@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Progress } from "@/components/ui/progress";
-import { Empty, Holding, Metric, brl, chartConfig } from "@/components/finance/shared";
+import { Empty, HIDDEN_VALUE, HideValueButton, Holding, Metric, brl, chartConfig, isAllMoneyHidden, useHiddenValue } from "@/components/finance/shared";
 
 export function DashboardView({
   income,
@@ -48,6 +48,8 @@ export function DashboardView({
     (sum, item) => sum + Number(item.quantity) * item.averageCostCents,
     0,
   );
+  const [balanceHidden, toggleBalance] = useHiddenValue("saldo");
+  const money = (cents: number) => (balanceHidden ? HIDDEN_VALUE : brl(cents));
   const ranked = [...byCategory].sort((a, b) => b.value - a.value);
   const categoryTotal = ranked.reduce((sum, item) => sum + item.value, 0);
   return (
@@ -59,11 +61,18 @@ export function DashboardView({
           <CardContent className="relative p-6 md:p-8">
             <div className="flex flex-col justify-between gap-8 sm:flex-row sm:items-start">
               <div>
-                <p className="text-sm text-primary-foreground/70">
-                  Seu saldo consolidado
-                </p>
+                <div className="flex items-center gap-1">
+                  <p className="text-sm text-primary-foreground/70">
+                    Seu saldo consolidado
+                  </p>
+                  <HideValueButton
+                    hidden={balanceHidden}
+                    onToggle={toggleBalance}
+                    className={`text-primary-foreground/70 hover:bg-primary-foreground/15 hover:text-primary-foreground ${isAllMoneyHidden() ? "invisible" : ""}`}
+                  />
+                </div>
                 <p className="mt-2 font-mono text-4xl font-semibold tracking-tight md:text-5xl">
-                  {brl(balance)}
+                  {money(balance)}
                 </p>
                 <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-primary-foreground/12 px-3 py-1 text-xs">
                   <TrendingUp className="size-3.5" />
@@ -81,7 +90,7 @@ export function DashboardView({
                   Entradas no mês
                 </p>
                 <p className="mt-1 font-mono text-lg font-semibold">
-                  {brl(current.receitas * 100)}
+                  {money(current.receitas * 100)}
                 </p>
               </div>
               <div>
@@ -89,7 +98,7 @@ export function DashboardView({
                   Saídas no mês
                 </p>
                 <p className="mt-1 font-mono text-lg font-semibold">
-                  {brl(current.despesas * 100)}
+                  {money(current.despesas * 100)}
                 </p>
               </div>
             </div>
@@ -134,24 +143,28 @@ export function DashboardView({
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Metric
           title="Receitas acumuladas"
+          hideKey="receitas"
           value={brl(income)}
           note="Todas as entradas registradas"
           icon={ArrowUpRight}
         />
         <Metric
           title="Despesas acumuladas"
+          hideKey="despesas"
           value={brl(expense)}
           note="Todos os gastos registrados"
           icon={ArrowDownRight}
         />
         <Metric
           title="Patrimônio investido"
+          hideKey="investido"
           value={brl(invested)}
           note={`${holdings.length} ${holdings.length === 1 ? "ativo" : "ativos"} na carteira`}
           icon={TrendingUp}
         />
         <Metric
           title="Taxa de economia"
+          hideKey="economia"
           value={`${savings}%`}
           note={
             savings >= 20
@@ -216,7 +229,7 @@ export function DashboardView({
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="month" />
                 <YAxis hide />
-                <ChartTooltip content={<ChartTooltipContent />} />
+                {!isAllMoneyHidden() && <ChartTooltip content={<ChartTooltipContent />} />}
                 <Area
                   dataKey="receitas"
                   type="monotone"
@@ -268,7 +281,7 @@ export function DashboardView({
                                 <span className="truncate">{String(name)}</span>
                               </span>
                               <span className="shrink-0 font-mono font-semibold tabular-nums text-foreground">
-                                {Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                                {brl(Math.round(Number(value) * 100))}
                               </span>
                             </div>
                           )}
