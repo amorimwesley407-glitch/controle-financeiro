@@ -60,6 +60,8 @@ BRAPI_TOKEN=
 
 > Nunca envie `.env.local` ao Git. `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` e `BETTER_AUTH_SECRET` são segredos de servidor.
 
+Para "Esqueci minha senha", crie uma conta no [Resend](https://resend.com) e defina `RESEND_API_KEY` e `EMAIL_FROM`, aqui e na Vercel. Sem domínio próprio, o remetente `onboarding@resend.dev` só entrega para o e-mail da sua conta do Resend. `BETTER_AUTH_URL` precisa ser o endereço pelo qual você acessa o app, porque o link do e-mail é montado com ele.
+
 Se a senha do banco contiver caracteres especiais, codifique-os na URL. Por exemplo, `!` deve ser escrito como `%21`.
 
 ## Configuração do Supabase
