@@ -64,9 +64,10 @@
 @media(prefers-reduced-motion:reduce){.tab-content-enter{animation:none}}
 
 .holding-flip-scene{perspective:1100px}
-.holding-flip-card{position:relative;transform-style:preserve-3d;transition:transform .65s cubic-bezier(.2,.75,.2,1)}
+.holding-flip-card{display:grid;grid-template-columns:minmax(0,1fr);transform-style:preserve-3d;transition:transform .65s cubic-bezier(.2,.75,.2,1)}
 .holding-flip-card[data-flipped="true"]{transform:rotateY(180deg)}
-.holding-flip-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+/* As duas faces ocupam a mesma célula: o card fica com a altura da face maior, sem altura fixa. */
+.holding-flip-face{grid-area:1/1;backface-visibility:hidden;-webkit-backface-visibility:hidden}
 .holding-flip-back{transform:rotateY(180deg)}
 @media(prefers-reduced-motion:reduce){.holding-flip-card{transition:none}}
 

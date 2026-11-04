@@ -5,7 +5,7 @@ import useSWR from "swr";
 import { getHoldingPerformance } from "@/lib/finance";
 import Image from "next/image";
 import { Area, AreaChart, XAxis, YAxis } from "recharts";
-import { Bitcoin, CircleDollarSign, Pencil, RotateCcw, Trash2, TrendingUp } from "lucide-react";
+import { ArrowRight, Bitcoin, CircleDollarSign, Pencil, RotateCcw, Trash2, TrendingUp } from "lucide-react";
 import { deleteHolding, updateHolding } from "@/app/actions/finance";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -171,8 +171,8 @@ export function InvestmentsView({
         {marketLoading ? <Skeleton className="h-64 w-full rounded-xl" /> : <StockMarket quotes={stockQuotes} />}
       </div>
       <Card className="xl:col-span-2">
-        <CardHeader className="flex-row items-start justify-between">
-          <div>
+        <CardHeader className="flex flex-row items-start justify-between gap-3">
+          <div className="min-w-0">
             <CardTitle>Minha carteira</CardTitle>
             <CardDescription>
               Patrimônio investido: {brl(total)}
@@ -247,19 +247,19 @@ export function HoldingFlipCard({
             : "Fundo";
   return (
     <div
-      className={`holding-flip-scene ${fixedIncome ? "h-72" : "h-64"}`}
+      className="holding-flip-scene min-h-64"
     >
-      <div className="holding-flip-card size-full" data-flipped={flipped}>
+      <div className="holding-flip-card h-full" data-flipped={flipped}>
         <button
           type="button"
-          className="holding-flip-face flex size-full flex-col rounded-2xl border bg-gradient-to-br from-card via-card to-cyan-500/[.045] p-5 text-left shadow-sm outline-none transition-colors hover:border-cyan-400/25 focus-visible:ring-2 focus-visible:ring-cyan-400/40"
+          className="holding-flip-face flex w-full flex-col rounded-2xl border bg-gradient-to-br from-card via-card to-cyan-500/[.045] p-5 text-left shadow-sm outline-none transition-colors hover:border-cyan-400/25 focus-visible:ring-2 focus-visible:ring-cyan-400/40"
           onClick={() => setFlipped(true)}
           aria-label={`Ver detalhes de ${holding.symbol}`}
         >
           <div className="flex items-start justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <Badge variant="outline" className="border-cyan-400/20 text-cyan-400">{typeLabel}</Badge>
-              <div className="mt-3 flex items-center gap-3">
+              <div className="mt-3 flex min-w-0 items-center gap-3">
                 {stockQuote ? (
                   <StockLogo quote={stockQuote} />
                 ) : (
@@ -267,29 +267,31 @@ export function HoldingFlipCard({
                     {holding.assetType === "crypto" ? <Bitcoin className="size-5" /> : <span className="text-xs font-bold">{holding.symbol.slice(0, 2)}</span>}
                   </span>
                 )}
-                <p className="font-mono text-2xl font-semibold">{holding.symbol}</p>
+                <p className="truncate font-mono text-2xl font-semibold" title={holding.symbol}>{holding.symbol}</p>
               </div>
             </div>
-            <span className="flex size-10 items-center justify-center rounded-xl border bg-background/50 text-cyan-400">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border bg-background/50 text-cyan-400">
               <TrendingUp className="size-5" />
             </span>
           </div>
-          <div className="mt-auto">
+          <div className="mt-auto w-full pt-6">
             <p className="text-xs text-muted-foreground">Valor investido</p>
             <p className="mt-1 font-mono text-2xl font-semibold">{brl(invested)}</p>
-            <div className="mt-4 flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
-              <span>
+            <div className="mt-4 flex items-center justify-between gap-3 border-t pt-3 text-xs text-muted-foreground">
+              <span className="min-w-0">
                 {holding.assetType === "crypto" && holding.symbol === "BTC"
                   ? `${quantity.toLocaleString("pt-BR", { maximumFractionDigits: 8 })} BTC · ${Math.round(quantity * 100_000_000).toLocaleString("pt-BR")} sats`
                   : isFixedIncomeType(holding.assetType)
                     ? "Renda fixa"
                     : `${quantity.toLocaleString("pt-BR")} unidades`}
               </span>
-              <span className="text-cyan-400">Toque para virar →</span>
+              <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-cyan-400">
+                Toque para virar <ArrowRight className="size-3.5" />
+              </span>
             </div>
           </div>
         </button>
-        <div className="holding-flip-face holding-flip-back flex size-full flex-col rounded-2xl border border-violet-400/20 bg-gradient-to-br from-card via-card to-violet-500/[.055] p-5">
+        <div className="holding-flip-face holding-flip-back flex w-full flex-col rounded-2xl border border-violet-400/20 bg-gradient-to-br from-card via-card to-violet-500/[.055] p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs text-muted-foreground">Detalhes da posição</p>
@@ -344,19 +346,21 @@ export function HoldingFlipCard({
                   <p className="mt-1 font-mono font-semibold">{currentPriceCents === null ? "Indisponível" : brl(currentPriceCents)}</p>
                 </div>
               </div>
-              <div className="mt-3 flex items-center justify-between rounded-xl border bg-background/35 p-3 text-sm">
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border bg-background/35 p-3 text-sm">
                 <span className="text-muted-foreground">Resultado</span>
-                <span className={`font-mono font-semibold ${result !== null && result < 0 ? "text-rose-400" : "text-cyan-400"}`}>
+                <span className={`text-right font-mono font-semibold ${result !== null && result < 0 ? "text-rose-400" : "text-cyan-400"}`}>
                   {result === null ? "—" : `${result >= 0 ? "+" : ""}${brl(result)} · ${resultPercentage?.toFixed(2)}%`}
                 </span>
               </div>
             </>
           )}
-          <div className="mt-auto flex justify-end gap-1 border-t pt-3">
-            <EditHoldingDialog holding={holding} />
-            <Button variant="ghost" size="icon-sm" aria-label={`Excluir ${holding.symbol}`} onClick={onRemove}>
-              <Trash2 />
-            </Button>
+          <div className="mt-auto pt-3">
+            <div className="flex justify-end gap-1 border-t pt-3">
+              <EditHoldingDialog holding={holding} />
+              <Button variant="ghost" size="icon-sm" aria-label={`Excluir ${holding.symbol}`} onClick={onRemove}>
+                <Trash2 />
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -402,7 +406,7 @@ export function StockMarket({ quotes }: { quotes: StockQuote[] }) {
       </CardHeader>
       <CardContent>
         {quotes.length ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+          <div className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-4 ${quotes.length % 5 === 0 ? "xl:grid-cols-5" : ""}`}>
             {quotes.map((quote, index) => (
               <StockMetricCard
                 key={quote.symbol}
@@ -456,11 +460,11 @@ export function StockMetricCard({
         <div className="flex min-w-0 items-center gap-3">
           <StockLogo quote={quote} />
           <div className="min-w-0">
-            <p className="font-semibold">{quote.symbol}</p>
+            <p className="truncate font-semibold">{quote.symbol}</p>
             <p className="truncate text-xs text-muted-foreground" title={quote.name}>{quote.name}</p>
           </div>
         </div>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${positive ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`}>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${positive ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`}>
           {positive ? "+" : ""}{periodChange.toFixed(2)}%
         </span>
       </div>
