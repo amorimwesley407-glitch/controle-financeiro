@@ -107,3 +107,37 @@ export function getCardInvoices<T extends AccountTx>(card: CardAccount, transact
     return { closingDate, dueDate, totalCents, paidCents, remainingCents, status, items }
   })
 }
+
+export const CARD_BRANDS = { visa: 'Visa', mastercard: 'Mastercard', elo: 'Elo', amex: 'American Express', hipercard: 'Hipercard' } as const
+export const CARD_COLORS = {
+  nubank: { label: 'Nubank', from: '#9A1FE0', to: '#5B0A99', text: '#FFFFFF', match: /^nu\s?ban/ },
+  inter: { label: 'Inter', from: '#FF8A00', to: '#E85D00', text: '#FFFFFF', match: /\binter\b/ },
+  itau: { label: 'Itaú', from: '#FF7A00', to: '#D85E00', text: '#FFFFFF', match: /\bitau\b/ },
+  bradesco: { label: 'Bradesco', from: '#E1173F', to: '#99051F', text: '#FFFFFF', match: /\bbradesco\b/ },
+  santander: { label: 'Santander', from: '#EC0000', to: '#A80000', text: '#FFFFFF', match: /\bsantander\b/ },
+  bb: { label: 'Banco do Brasil', from: '#FFEF38', to: '#F5C800', text: '#003DA5', match: /\b(bb|banco do brasil)\b/ },
+  caixa: { label: 'Caixa', from: '#0070C0', to: '#003F7D', text: '#FFFFFF', match: /\bcaixa\b/ },
+  c6: { label: 'C6 Bank', from: '#3A3A3A', to: '#0D0D0D', text: '#FFFFFF', match: /\bc6\b/ },
+  picpay: { label: 'PicPay', from: '#2BD46F', to: '#11994A', text: '#FFFFFF', match: /\bpicpay\b/ },
+  mercadopago: { label: 'Mercado Pago', from: '#22BDF5', to: '#0084C7', text: '#FFFFFF', match: /\bmercado ?(pago|livre)\b/ },
+  neon: { label: 'Neon', from: '#14C8F0', to: '#0A6FD8', text: '#FFFFFF', match: /\bneon\b/ },
+  graphite: { label: 'Grafite', from: '#4A5568', to: '#1A202C', text: '#FFFFFF', match: /^$/ },
+} as const
+export type CardBrand = keyof typeof CARD_BRANDS
+export type CardColor = keyof typeof CARD_COLORS
+
+/** Cor salva no cartão ou, se não houver, a do banco reconhecido pelo nome ("Nubanck" também vale). */
+export function getCardColor(color: string | null | undefined, name: string): CardColor {
+  if (color && color in CARD_COLORS) return color as CardColor
+  const text = name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+  const found = (Object.keys(CARD_COLORS) as CardColor[]).find(key => CARD_COLORS[key].match.test(text))
+  return found ?? 'graphite'
+}
+
+/** Metas ligadas a uma conta mostram o saldo atual dela como valor guardado, nunca abaixo de zero. */
+export function applyGoalBalances<G extends { accountId?: number | null; currentCents: number }, T extends AccountTx>(goals: G[], accounts: BalanceAccount[], transactions: T[], transfers: AccountTransfer[], currentDate: string) {
+  return goals.map(goal => {
+    const account = accounts.find(item => item.id === goal.accountId)
+    return account ? { ...goal, currentCents: Math.max(getAccountBalance(account, transactions, transfers, currentDate), 0) } : goal
+  })
+}

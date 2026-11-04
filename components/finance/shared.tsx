@@ -32,6 +32,9 @@ export type Account = {
   initialBalanceCents: number;
   closingDay: number | null;
   dueDay: number | null;
+  cardBrand?: string | null;
+  cardColor?: string | null;
+  cardLastDigits?: string | null;
 };
 
 export type Transfer = {
@@ -58,6 +61,7 @@ export type GoalType = {
   targetCents: number;
   currentCents: number;
   deadline: string | null;
+  accountId?: number | null;
 };
 
 export type Budget = { id: number; name: string; limitCents: number; month: string; categoryId: number | null };
