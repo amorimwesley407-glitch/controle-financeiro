@@ -1,10 +1,12 @@
 "use client";
 
-import { BriefcaseBusiness, BusFront, Car, CreditCard, Dumbbell, Gamepad2, Gift, GraduationCap, HeartPulse, House, PawPrint, Pill, Scissors, ShieldCheck, ShoppingBag, Target, Tv, Utensils, WalletCards, Wifi } from "lucide-react";
+import { useSyncExternalStore } from "react";
+import { BriefcaseBusiness, BusFront, Car, CreditCard, Dumbbell, Eye, EyeOff, Gamepad2, Gift, GraduationCap, HeartPulse, House, PawPrint, Pill, Scissors, ShieldCheck, ShoppingBag, Target, Tv, Utensils, WalletCards, Wifi } from "lucide-react";
 import { CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { type ChartConfig } from "@/components/ui/chart";
 import { Label } from "@/components/ui/label";
 import { AnimatedCard } from "@/components/ui/animated-card";
+import { Button } from "@/components/ui/button";
 
 export type Tx = {
   id: number;
@@ -97,10 +99,20 @@ export type HistoricalPoint = { date: number; value: number };
 
 export type HistoryRange = "7d" | "1mo" | "6mo" | "1y";
 
-export const brl = (c: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
-    c / 100,
-  );
+export const HIDDEN_VALUE = "R$ ••••••";
+
+// Olho do topo: quando ligado, brl() mostra HIDDEN_VALUE em todo o app. O FinanceDashboard
+// atualiza esta flag no próprio render, antes dos filhos, que chamam brl() ao renderizar.
+let allMoneyHidden = false;
+export function setAllMoneyHidden(hidden: boolean) {
+  allMoneyHidden = hidden;
+}
+export const isAllMoneyHidden = () => allMoneyHidden;
+
+export const brl = (c: number, options?: Intl.NumberFormatOptions) =>
+  allMoneyHidden
+    ? HIDDEN_VALUE
+    : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", ...options }).format(c / 100);
 
 export const chartConfig = {
   receitas: { label: "Receitas", color: "var(--chart-1)" },
@@ -276,17 +288,74 @@ export function Field({
   );
 }
 
+// Escolha de ocultar cada valor, lembrada neste navegador. A memória garante que o botão
+// funcione mesmo quando o localStorage não está disponível (por exemplo, em aba anônima).
+const hiddenMemory = new Map<string, boolean>();
+const hiddenListeners = new Set<() => void>();
+const hiddenStorageKey = (key: string) => `clareza:ocultar:${key}`;
+
+function readHidden(key: string) {
+  const remembered = hiddenMemory.get(key);
+  if (remembered !== undefined) return remembered;
+  try {
+    return localStorage.getItem(hiddenStorageKey(key)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function subscribeHidden(listener: () => void) {
+  hiddenListeners.add(listener);
+  return () => hiddenListeners.delete(listener);
+}
+
+export function useHiddenValue(key: string) {
+  const hidden = useSyncExternalStore(subscribeHidden, () => readHidden(key), () => false);
+  function toggle() {
+    hiddenMemory.set(key, !hidden);
+    try {
+      localStorage.setItem(hiddenStorageKey(key), hidden ? "0" : "1");
+    } catch {}
+    hiddenListeners.forEach((listener) => listener());
+  }
+  return [hidden, toggle] as const;
+}
+
+export function HideValueButton({ hidden, onToggle, className, all = false }: { hidden: boolean; onToggle: () => void; className?: string; all?: boolean }) {
+  const Icon = hidden ? EyeOff : Eye;
+  const label = all ? (hidden ? "Mostrar todos os valores" : "Ocultar todos os valores") : hidden ? "Mostrar valor" : "Ocultar valor";
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size={all ? "icon" : "icon-sm"}
+      className={className}
+      aria-label={label}
+      aria-pressed={hidden}
+      title={label}
+      onClick={onToggle}
+    >
+      <Icon />
+    </Button>
+  );
+}
+
 export function Metric({
   title,
   value,
   note,
   icon: Icon,
+  hideKey,
 }: {
   title: string;
   value: string;
   note: string;
   icon: typeof Target;
+  /** Quando informado, mostra o botão de olho para ocultar o valor do card. */
+  hideKey?: string;
 }) {
+  const [hidden, toggleHidden] = useHiddenValue(hideKey ?? "");
+  const isHidden = isAllMoneyHidden() || (Boolean(hideKey) && hidden);
   const accent =
     title === "Receitas acumuladas"
       ? "text-emerald-500 dark:text-emerald-400"
@@ -298,16 +367,22 @@ export function Metric({
   return (
     <AnimatedCard className="overflow-hidden border-0 bg-card shadow-[0_10px_35px_rgba(0,0,0,.14)]">
       <CardHeader className="relative flex-row items-center justify-between pb-3">
-        <CardDescription className="text-[13px] font-medium text-muted-foreground">
-          {title}
-        </CardDescription>
+        <div className="flex min-w-0 items-center gap-1">
+          <CardDescription className="text-[13px] font-medium text-muted-foreground">
+            {title}
+          </CardDescription>
+          {hideKey && (
+            // Com o olho do topo ligado, o botão do card fica invisível, mas segura o espaço para o card não pular.
+            <HideValueButton hidden={hidden} onToggle={toggleHidden} className={`text-muted-foreground ${isAllMoneyHidden() ? "invisible" : ""}`} />
+          )}
+        </div>
         <span className="flex size-9 items-center justify-center rounded-lg border border-border/80 bg-muted/50 text-muted-foreground">
           <Icon className="size-4" strokeWidth={1.8} />
         </span>
       </CardHeader>
       <CardContent className="relative">
         <p className="font-mono text-2xl font-semibold tracking-[-.04em] text-foreground">
-          {value}
+          {isHidden ? (value.startsWith("R$") ? HIDDEN_VALUE : "••••") : value}
         </p>
         <div className="mt-3 flex items-center gap-2">
           <span className={`size-1.5 rounded-full bg-current ${accent}`} />

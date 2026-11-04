@@ -6,9 +6,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
+import { brl } from '@/components/finance/shared'
 
 type Goal={id:number;name:string;targetCents:number;currentCents:number;deadline:string|null}
-const money=(cents:number)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(cents/100)
+const money=(cents:number)=>brl(cents)
 const progress=(goal:Goal)=>Math.min(100,Math.round(goal.currentCents/goal.targetCents*100))
 
 export function FinancialGoalsOrbit({goals}:{goals:Goal[]}){

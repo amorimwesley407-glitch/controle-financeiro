@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { Empty, Metric, Tx, brl, chartConfig } from "@/components/finance/shared";
+import { Empty, Metric, Tx, brl, chartConfig, isAllMoneyHidden } from "@/components/finance/shared";
 
 export function ReportsView({
   income,
@@ -102,7 +102,7 @@ export function ReportsView({
                   <CartesianGrid vertical={false} />
                   <XAxis dataKey="month" />
                   <YAxis hide />
-                  <ChartTooltip content={<ChartTooltipContent />} />
+                  {!isAllMoneyHidden() && <ChartTooltip content={<ChartTooltipContent />} />}
                   <Bar
                     dataKey="receitas"
                     fill="var(--color-receitas)"

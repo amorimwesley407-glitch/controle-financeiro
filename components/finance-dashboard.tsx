@@ -10,7 +10,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { FinancialGoalsOrbit } from "@/components/financial-goals-orbit";
 import { LocationTag } from "@/components/ui/location-tag";
 import { GoalsFeatureCard } from "@/components/goals-feature-card";
-import { Account, Budget, Category, GoalType, Holding, Transfer, Tx } from "@/components/finance/shared";
+import { Account, Budget, Category, GoalType, HideValueButton, Holding, Transfer, Tx, setAllMoneyHidden, useHiddenValue } from "@/components/finance/shared";
 import { AccountsView } from "@/components/finance/accounts-view";
 import { FormDialog } from "@/components/finance/form-dialog";
 import { TransactionTable } from "@/components/finance/transactions";
@@ -61,6 +61,8 @@ export function FinanceDashboard({
   const router = useRouter();
   const [mobile, setMobile] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(true);
+  const [allHidden, toggleAllHidden] = useHiddenValue("todos");
+  setAllMoneyHidden(allHidden);
   const [view, setView] = useState<View>("dashboard");
   const [displayName, setDisplayName] = useState(user.name);
   const [displayImage, setDisplayImage] = useState(user.image);
@@ -304,6 +306,7 @@ export function FinanceDashboard({
               categories={categories}
               currentDate={currentDate}
             />
+            <HideValueButton all hidden={allHidden} onToggle={toggleAllHidden} />
             <ThemeToggle />
             <FormDialog type="transaction" categories={categories} accounts={accounts} />
             <AccountMenu

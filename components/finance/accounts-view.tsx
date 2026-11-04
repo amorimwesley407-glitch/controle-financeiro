@@ -106,7 +106,7 @@ function AccountDialog({ account }: { account?: Account }) {
           </Field>
           {isCard && (
             <>
-              <div className="mx-auto w-full max-w-72">
+              <div className="mx-auto w-full max-w-64">
                 <CreditCardVisual name={name} brand={brand} color={color} lastDigits={lastDigits} />
               </div>
               <div className="grid grid-cols-2 gap-4">
