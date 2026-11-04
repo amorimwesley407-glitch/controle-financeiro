@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findSuggestedCategory, suggestCategory } from './categorize'
+import { findLearnedCategory, findSuggestedCategory, suggestCategory } from './categorize'
 
 describe('suggestCategory', () => {
   it.each([
@@ -69,3 +69,18 @@ describe('findSuggestedCategory', () => {
   })
 })
 
+describe('findLearnedCategory', () => {
+  const categories = [{ id: 1, type: 'expense' }, { id: 2, type: 'expense' }, { id: 3, type: 'income' }]
+  const row = (description: string, categoryId: number | null, type = 'expense') => ({ description, type, categoryId })
+
+  it('usa o lançamento mais recente, ignorando maiúsculas, acentos e espaços', () => {
+    const history = [row('Padaria  São João', 2), row('padaria sao joao', 1)]
+    expect(findLearnedCategory('PADARIA SÃO JOÃO', 'expense', history, categories)?.id).toBe(2)
+  })
+  it('não aprende de outro tipo, de lançamento sem categoria nem de categoria que não existe mais', () => {
+    expect(findLearnedCategory('Pix', 'expense', [row('Pix', 3, 'income')], categories)).toBeUndefined()
+    expect(findLearnedCategory('Pix', 'expense', [row('Pix', null)], categories)).toBeUndefined()
+    expect(findLearnedCategory('Pix', 'expense', [row('Pix', 99)], categories)).toBeUndefined()
+    expect(findLearnedCategory('Pix', 'expense', [row('Pix', 3)], categories)).toBeUndefined()
+  })
+})

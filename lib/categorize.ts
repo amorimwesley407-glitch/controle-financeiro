@@ -36,3 +36,16 @@ export function findSuggestedCategory<T extends CategoryLike>(description: strin
   }
   return undefined
 }
+
+type LearnedRow = { description: string; type: string; categoryId: number | null }
+const learnKey = (text: string) => normalize(text).replace(/\s+/g, ' ')
+
+/**
+ * Categoria aprendida com os lançamentos do próprio usuário: a do lançamento mais recente com a mesma descrição e tipo.
+ * `history` deve vir do mais recente para o mais antigo, para uma correção valer nos próximos.
+ */
+export function findLearnedCategory<T extends { id: number; type: string }>(description: string, type: string, history: LearnedRow[], categories: T[]) {
+  const key = learnKey(description)
+  const match = history.find(row => row.categoryId !== null && row.type === type && learnKey(row.description) === key)
+  return match ? categories.find(item => item.id === match.categoryId && item.type === type) : undefined
+}
