@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { getBudgetAlerts, getPendingBills } from "@/lib/finance";
 import { getCardDueAlerts } from "@/lib/accounts";
+import { BillPaidButton } from "@/components/finance/bills-card";
 import { Bell, CalendarClock, CreditCard, LogOut, ReceiptText, Settings2, Target, TriangleAlert, UserRound } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -127,10 +128,10 @@ export function NotificationMenu({
                           ? `Conta vencida há ${-bill.daysLeft} ${bill.daysLeft === -1 ? "dia" : "dias"}.`
                           : bill.daysLeft === 0
                             ? "Conta vence hoje."
-                            : `Conta vence em ${bill.daysLeft} ${bill.daysLeft === 1 ? "dia" : "dias"}.`}{" "}
-                        Marque como paga no Painel.
+                            : `Conta vence em ${bill.daysLeft} ${bill.daysLeft === 1 ? "dia" : "dias"}.`}
                       </p>
                     </div>
+                    <BillPaidButton bill={bill} compact />
                   </div>
                 ))}
                 {alerts.map((alert) => (
