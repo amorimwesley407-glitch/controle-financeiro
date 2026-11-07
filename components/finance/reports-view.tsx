@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Account, Empty, Holding, Metric, Tx, brl, chartConfig, isAllMoneyHidden } from "@/components/finance/shared";
 import { NetWorthCard } from "@/components/finance/net-worth-card";
+import { AnnualReportCard } from "@/components/finance/annual-report-card";
 
 export function ReportsView({
   income,
@@ -165,6 +166,7 @@ export function ReportsView({
       </section>
       <CategoryComparisonCard transactions={transactions} currentDate={currentDate} />
       <ForecastCard transactions={transactions} currentDate={currentDate} />
+      <AnnualReportCard transactions={transactions} currentDate={currentDate} />
       <Card>
         <CardHeader>
           <CardTitle>Resumo inteligente</CardTitle>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compoundProjection, getBudgetAlerts, getBudgetsToCopy, getNetWorthHistory, getPendingBills, previousMonthOf, getCategoryComparison, getFixedExpenses, getHoldingPerformance, getMonthlyForecast, getSpendingAlerts } from './finance'
+import { compoundProjection, getAnnualSummary, getBudgetAlerts, getBudgetsToCopy, isDeductibleCategory, getNetWorthHistory, getPendingBills, previousMonthOf, getCategoryComparison, getFixedExpenses, getHoldingPerformance, getMonthlyForecast, getSpendingAlerts } from './finance'
 
 const categories = [{ id: 1, name: 'Mercado' }, { id: 2, name: 'Lazer' }]
 const tx = (over: Partial<Parameters<typeof getBudgetAlerts>[0][number]>) => ({
@@ -256,5 +256,34 @@ describe('getNetWorthHistory', () => {
     expect(history.map(item => item.month)).toEqual(['2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'])
     expect(history.every(item => item.valueCents === 100)).toBe(true)
     expect(getNetWorthHistory([{ initialBalanceCents: 500 }], [], [], '2026-11-07')).toEqual([{ month: '2026-11', valueCents: 500 }])
+  })
+})
+
+describe('resumo anual', () => {
+  const tx = (date: string, type: string, amountCents: number, categoryName?: string) => ({ date, type, amountCents, categoryName })
+  it('reconhece saúde e educação, com ou sem acento', () => {
+    expect(['Saúde', 'saude', 'Educação dos filhos', 'EDUCACAO'].every(isDeductibleCategory)).toBe(true)
+    expect(['Saudável', 'Lazer', undefined].some(isDeductibleCategory)).toBe(false)
+  })
+  it('soma o ano até hoje por categoria e lista as despesas dedutíveis em ordem de data', () => {
+    const summary = getAnnualSummary([
+      tx('2025-12-30', 'expense', 999, 'Saúde'),
+      tx('2026-03-10', 'expense', 30000, 'Saúde'),
+      tx('2026-02-01', 'expense', 80000, 'Educação'),
+      tx('2026-02-05', 'expense', 50000, 'Mercado'),
+      tx('2026-02-06', 'expense', 1000),
+      tx('2026-01-05', 'income', 600000, 'Salário'),
+      tx('2026-12-20', 'expense', 7777, 'Saúde'),
+    ], '2026', '2026-11-07')
+    expect(summary.incomeCents).toBe(600000)
+    expect(summary.expenseCents).toBe(161000)
+    expect(summary.expenseByCategory).toEqual([
+      { name: 'Educação', totalCents: 80000, deductible: true },
+      { name: 'Mercado', totalCents: 50000, deductible: false },
+      { name: 'Saúde', totalCents: 30000, deductible: true },
+      { name: 'Sem categoria', totalCents: 1000, deductible: false },
+    ])
+    expect(summary.deductible.map(item => item.date)).toEqual(['2026-02-01', '2026-03-10'])
+    expect(summary.deductibleCents).toBe(110000)
   })
 })

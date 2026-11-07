@@ -288,6 +288,24 @@ describe.skipIf(!testDatabaseUrl)('isolamento entre usuários', () => {
     expect((await sql`SELECT "billStatus" FROM "transactions" WHERE "id" = ${bobBill.id}`)[0].billStatus).toBe('pending')
   })
 
+  it('exporta só os dados de quem pede, sem senha nem dono das linhas', async () => {
+    await sql`INSERT INTO "account" ("id", "accountId", "providerId", "userId", "password") VALUES ('acc-alice', ${ALICE}, 'credential', ${ALICE}, 'hash-secreto')`
+    const { GET } = await import('../api/export/route')
+    const response = await GET()
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-disposition')).toMatch(/attachment; filename="clareza-dados-\d{4}-\d{2}-\d{2}\.json"/)
+    const text = await response.text()
+    expect(text).not.toContain('hash-secreto')
+    expect(text).not.toContain(BOB)
+    expect(text).not.toContain('Feira')
+    const data = JSON.parse(text)
+    expect(data.perfil.email).toBe('alice@teste.local')
+    expect(data.lancamentos.map((item: { description: string }) => item.description)).toEqual(['Ônibus'])
+    expect(data.lancamentos[0]).not.toHaveProperty('userId')
+    state.userId = null
+    expect((await GET()).status).toBe(401)
+  })
+
   describe('metas ligadas a contas e aparência do cartão', () => {
     const goalForm = (fields: Record<string, string>) => form({ name: 'Reserva', target: '1000', current: '0', deadline: '', ...fields })
 
