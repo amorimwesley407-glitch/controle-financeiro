@@ -80,8 +80,9 @@ export async function addTransaction(form: FormData) {
     revalidatePath('/')
     return
   }
+  const billStatus = billStatusFor(form, parsed.type, account)
   const values=[];const [year,monthIndex,day]=parsed.date.split('-').map(Number);let offset=0
-  do {const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(recurrenceEnd&&occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId:parsed.categoryId,accountId,notes,recurring});offset++;if(offset>120)throw new Error('O período recorrente deve ter no máximo 120 meses')}while(recurrenceEnd)
+  do {const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(recurrenceEnd&&occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId:parsed.categoryId,accountId,notes,recurring,billStatus});offset++;if(offset>120)throw new Error('O período recorrente deve ter no máximo 120 meses')}while(recurrenceEnd)
   await db.insert(transactions).values(values)
   revalidatePath('/')
 }
@@ -96,6 +97,14 @@ async function updateFollowingInstallments(before: typeof transactions.$inferSel
   const changes = Object.fromEntries((Object.keys(after) as (keyof InstallmentFields)[]).filter(key => after[key] !== before[key]).map(key => [key, after[key]]))
   if (!Object.keys(changes).length) return
   await db.update(transactions).set(changes).where(and(eq(transactions.userId, userId), eq(transactions.installmentGroup, before.installmentGroup), gt(transactions.installmentNumber, before.installmentNumber)))
+}
+/**
+ * Status de conta a pagar para uma despesa marcada como tal no formulário. Compra no cartão não entra:
+ * quem vence é a fatura. Uma conta que já estava paga continua paga ao ser editada.
+ */
+function billStatusFor(form: FormData, type: string, account: { kind: string } | null, current: string | null = null) {
+  if (form.get('bill') !== 'true' || type !== 'expense' || account?.kind === 'credit_card') return null
+  return current ?? 'pending'
 }
 /** Conta escolhida no formulário, conferindo o dono. Vazio ou "none" significa sem conta. */
 async function getOwnedAccount(value: FormDataEntryValue | null, userId: string) {
@@ -121,16 +130,26 @@ export async function updateTransaction(id: number, form: FormData) {
     if (!category[0] || category[0].type !== parsed.type) categoryId = null
   }
   const notes = parseNotes(form)
-  const accountId = (await getOwnedAccount(form.get('accountId'), userId))?.id ?? null
+  const account = await getOwnedAccount(form.get('accountId'), userId)
+  const accountId = account?.id ?? null
+  const billStatus = billStatusFor(form, parsed.type, account, existing[0].billStatus)
   const newImage = await saveTransactionImage(form.get('image'), userId)
   const removeImage = form.get('removeImage') === 'true'
-  await db.update(transactions).set({ description: parsed.description, type: parsed.type, date: parsed.date, amountCents: parsed.amount, categoryId, accountId, notes, recurring, imagePath: newImage??(removeImage?null:existing[0].imagePath) }).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId)))
+  await db.update(transactions).set({ description: parsed.description, type: parsed.type, date: parsed.date, amountCents: parsed.amount, categoryId, accountId, notes, recurring, billStatus, imagePath: newImage??(removeImage?null:existing[0].imagePath) }).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId)))
   if ((newImage || removeImage) && existing[0].imagePath) await removeTransactionImage(existing[0].imagePath,userId)
   if (form.get('scope') === 'following') await updateFollowingInstallments(existing[0], { description: parsed.description, type: parsed.type, amountCents: parsed.amount, categoryId, accountId, notes }, userId)
-  if(recurrenceEnd){const values=[];const [year,monthIndex,day]=parsed.date.split('-').map(Number);for(let offset=1;offset<=120;offset++){const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId,accountId,notes,recurring:true})}if(values.length)await db.insert(transactions).values(values)}
+  if(recurrenceEnd){const values=[];const [year,monthIndex,day]=parsed.date.split('-').map(Number);for(let offset=1;offset<=120;offset++){const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId,accountId,notes,recurring:true,billStatus:billStatus&&'pending'})}if(values.length)await db.insert(transactions).values(values)}
   revalidatePath('/')
 }
 export async function deleteTransaction(id: number) { const userId = await getUserId(); const safeId = z.number().int().positive().parse(id); const existing=await db.select().from(transactions).where(and(eq(transactions.id,safeId),eq(transactions.userId,userId))).limit(1); if(!existing[0])throw new Error('Transação não encontrada'); await db.delete(transactions).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId))); await removeTransactionImage(existing[0].imagePath,userId); revalidatePath('/') }
+/** Marca uma conta a pagar como paga, ou volta para pendente. */
+export async function setBillPaid(id: number, paid: boolean) {
+  const userId = await getUserId()
+  const safeId = z.number().int().positive().parse(id)
+  const result = await db.update(transactions).set({ billStatus: z.boolean().parse(paid) ? 'paid' : 'pending' }).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId), isNotNull(transactions.billStatus))).returning({ id: transactions.id })
+  if (!result.length) throw new Error('Conta a pagar não encontrada')
+  revalidatePath('/')
+}
 export async function deleteInstallments(group: string) {
   const userId = await getUserId()
   const safeGroup = z.string().uuid().parse(group)

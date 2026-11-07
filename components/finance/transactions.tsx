@@ -42,6 +42,7 @@ export function EditTransactionDialog({
   );
   const transactionIsStreaming = isStreamingCategory(selectedCategory);
   const isInstallment = Boolean(transaction.installmentGroup);
+  const canBeBill = type === "expense" && !accounts.some((account) => String(account.id) === accountId && account.kind === "credit_card");
   const currentStreamingService = streamingServices.includes(
     transaction.description as (typeof streamingServices)[number],
   )
@@ -243,6 +244,19 @@ export function EditTransactionDialog({
               Remover imagem própria e voltar a usar a imagem da categoria
             </label>
           )}
+          {canBeBill && (
+            <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
+              <input name="bill" type="checkbox" value="true" defaultChecked={Boolean(transaction.billStatus)} />
+              <span>
+                <span className="block font-medium">Conta a pagar</span>
+                <span className="text-xs text-muted-foreground">
+                  {transaction.billStatus === "paid"
+                    ? "Já marcada como paga. Desmarque para virar um lançamento comum."
+                    : "Fica pendente e o app avisa perto do vencimento até você marcar como paga."}
+                </span>
+              </span>
+            </label>
+          )}
           {isInstallment && transaction.installmentNumber !== transaction.installmentTotal && (
             <fieldset className="flex flex-col gap-2 rounded-lg border p-3 text-sm">
               <legend className="px-1 font-medium">
@@ -361,6 +375,8 @@ export function TransactionLabel({
           {category?.name ?? transaction.categoryName ?? "Sem categoria"}
           {transaction.accountName && ` · ${transaction.accountName}`}
           {transaction.installmentTotal && ` · Parcela ${transaction.installmentNumber}/${transaction.installmentTotal}`}
+          {transaction.billStatus === "pending" && " · A pagar"}
+          {transaction.billStatus === "paid" && " · Paga"}
         </p>
         {transaction.notes && <p className="truncate text-xs text-muted-foreground" title={transaction.notes}>{transaction.notes}</p>}
       </div>

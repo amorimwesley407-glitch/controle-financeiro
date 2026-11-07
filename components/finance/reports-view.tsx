@@ -8,7 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { Empty, Metric, Tx, brl, chartConfig, isAllMoneyHidden } from "@/components/finance/shared";
+import { Account, Empty, Holding, Metric, Tx, brl, chartConfig, isAllMoneyHidden } from "@/components/finance/shared";
+import { NetWorthCard } from "@/components/finance/net-worth-card";
 
 export function ReportsView({
   income,
@@ -18,6 +19,8 @@ export function ReportsView({
   byCategory,
   transactions,
   currentDate,
+  accounts,
+  holdings,
 }: {
   income: number;
   expense: number;
@@ -26,6 +29,8 @@ export function ReportsView({
   byCategory: { name: string; value: number; fill: string }[];
   transactions: Tx[];
   currentDate: string;
+  accounts: Account[];
+  holdings: Holding[];
 }) {
   const activeMonths = flow.filter((item) => item.receitas || item.despesas);
   const averageExpense = activeMonths.length
@@ -87,6 +92,7 @@ export function ReportsView({
           icon={ReceiptText}
         />
       </section>
+      <NetWorthCard accounts={accounts} transactions={transactions} holdings={holdings} currentDate={currentDate} />
       <section className="grid gap-6 xl:grid-cols-3">
         <Card className="xl:col-span-2">
           <CardHeader>
