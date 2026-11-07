@@ -237,6 +237,25 @@ describe.skipIf(!testDatabaseUrl)('isolamento entre usuários', () => {
       expect(await limitOf('Corrente')).toBeNull()
       await expect(actions.addAccount(form({ name: 'Zerado', kind: 'credit_card', closingDay: '10', dueDay: '20', creditLimit: '0' }))).rejects.toThrow()
     })
+
+    it('divide um lançamento entre categorias do próprio usuário, com a soma igual ao original', async () => {
+      const [{ id: transporte }] = await sql`SELECT "id" FROM "categories" WHERE "userId" = ${ALICE} AND "name" = 'Transporte'`
+      const [{ id: limpeza }] = await sql`INSERT INTO "categories" ("userId", "name", "type") VALUES (${ALICE}, 'Limpeza', 'expense') RETURNING "id"`
+      const [{ id }] = await sql`INSERT INTO "transactions" ("userId", "type", "description", "amountCents", "date", "accountId", "notes") VALUES (${ALICE}, 'expense', 'Mercado', 10000, '2026-10-03', ${aliceAccount}, 'nota') RETURNING "id"`
+      await expect(actions.splitTransaction(id, [{ categoryId: transporte, amountCents: 7000 }, { categoryId: limpeza, amountCents: 2999 }])).rejects.toThrow('somar')
+      await expect(actions.splitTransaction(id, [{ categoryId: transporte, amountCents: 7000 }, { categoryId: bob.categoryId, amountCents: 3000 }])).rejects.toThrow('Categoria inválida')
+      await expect(actions.splitTransaction(bob.transactionId, [{ categoryId: null, amountCents: 2500 }, { categoryId: null, amountCents: 2500 }])).rejects.toThrow('não encontrada')
+
+      await actions.splitTransaction(id, [{ categoryId: transporte, amountCents: 7000 }, { categoryId: limpeza, amountCents: 2000 }, { categoryId: null, amountCents: 1000 }])
+      const parts = await sql`SELECT "description", "date", "accountId", "notes", "categoryId", "amountCents" FROM "transactions" WHERE "userId" = ${ALICE} AND "description" = 'Mercado' ORDER BY "amountCents" DESC`
+      expect(parts).toEqual([
+        { description: 'Mercado', date: '2026-10-03', accountId: aliceAccount, notes: 'nota', categoryId: transporte, amountCents: 7000 },
+        { description: 'Mercado', date: '2026-10-03', accountId: aliceAccount, notes: 'nota', categoryId: limpeza, amountCents: 2000 },
+        { description: 'Mercado', date: '2026-10-03', accountId: aliceAccount, notes: 'nota', categoryId: null, amountCents: 1000 },
+      ])
+      const [{ id: installment }] = await sql`INSERT INTO "transactions" ("userId", "type", "description", "amountCents", "date", "installmentGroup", "installmentNumber", "installmentTotal") VALUES (${ALICE}, 'expense', 'TV', 1000, '2026-10-03', ${'1f8b2a4e-1c3d-4e5f-8a9b-0c1d2e3f4a5b'}, 1, 2) RETURNING "id"`
+      await expect(actions.splitTransaction(installment, [{ categoryId: null, amountCents: 500 }, { categoryId: null, amountCents: 500 }])).rejects.toThrow('Parcelas')
+    })
   })
 
   it('copia os orçamentos do mês anterior só do próprio usuário, sem duplicar', async () => {
