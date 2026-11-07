@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { Category, Empty, Field, HistoricalPoint, HistoryRange, Holding, Quote, StockQuote, brl, isFixedIncomeType } from "@/components/finance/shared";
+import { Category, Empty, Field, HistoricalPoint, HistoryRange, Holding, Quote, StockQuote, brl, isFixedIncomeType, assetTypeLabels } from "@/components/finance/shared";
 import { FormDialog } from "@/components/finance/form-dialog";
 
 export function EditHoldingDialog({ holding }: { holding: Holding }) {
@@ -70,7 +70,7 @@ export function EditHoldingDialog({ holding }: { holding: Holding }) {
                 onValueChange={(value) => setAssetType(String(value))}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue>{(value: string) => assetTypeLabels[value] ?? value}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>

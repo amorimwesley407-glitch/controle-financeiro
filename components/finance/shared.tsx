@@ -188,6 +188,20 @@ export const categoryIconOptions = [
   ["cardInsurance", "Seguro do cartão"],
 ] as const;
 
+// Rótulos mostrados no campo de seleção fechado. Sem eles, o campo exibe o valor interno ("expense", "stock").
+export const transactionTypeLabel = (value: string) => (value === "income" ? "Receita" : "Despesa");
+export const assetTypeLabels: Record<string, string> = { stock: "Ação", crypto: "Cripto", fund: "Fundo", cdb: "CDB", treasury: "Tesouro Selic" };
+export function CategoryIconLabel({ value }: { value: string }) {
+  const Icon = categoryIcons[value as keyof typeof categoryIcons];
+  const label = categoryIconOptions.find(([option]) => option === value)?.[1] ?? value;
+  return (
+    <>
+      {Icon && <Icon className="size-4" />}
+      {label}
+    </>
+  );
+}
+
 export const streamingServices = [
   "Netflix",
   "Prime Video",

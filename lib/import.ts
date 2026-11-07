@@ -43,3 +43,12 @@ export function skipExistingTransactions<T extends TransactionKey>(rows: T[], ex
   }
   return { fresh, skipped }
 }
+
+/**
+ * Crédito no extrato do cartão que é o pagamento da fatura ("Pagamento recebido", "Pgto. fatura"), e não um estorno.
+ * Importado, ele contaria como receita. O pagamento se registra com "Pagar fatura", que tira o dinheiro da conta certa.
+ */
+export function isCardPayment(row: { type: string; description: string }) {
+  const text = row.description.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  return row.type === 'income' && /\b(pagamento|pgto|pagto)\b/.test(text)
+}
