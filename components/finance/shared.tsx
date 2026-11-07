@@ -26,6 +26,8 @@ export type Tx = {
   installmentGroup?: string | null;
   installmentNumber?: number | null;
   installmentTotal?: number | null;
+  /** Conta a pagar: "pending" até ser marcada como paga, "paid" depois. Nulo é um lançamento comum. */
+  billStatus?: string | null;
 };
 
 export type Account = {
@@ -77,6 +79,7 @@ export type Holding = {
   quantity: string;
   averageCostCents: number;
   applicationDate?: string | null;
+  createdAt?: Date | string | null;
 };
 
 export type Quote = {

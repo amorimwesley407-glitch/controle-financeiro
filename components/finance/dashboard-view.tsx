@@ -16,6 +16,7 @@ export function DashboardView({
   flow,
   byCategory,
   holdings,
+  bills,
   children,
 }: {
   income: number;
@@ -25,7 +26,9 @@ export function DashboardView({
   flow: { month: string; receitas: number; despesas: number; saldo: number }[];
   byCategory: { name: string; value: number; fill: string }[];
   holdings: Holding[];
-  /** Aparece entre os indicadores e os gráficos. */
+  /** Contas a pagar: logo abaixo dos indicadores, por ser o que mais pede atenção. */
+  bills?: React.ReactNode;
+  /** Faturas dos cartões: ao lado de "Onde você mais gasta". */
   children?: React.ReactNode;
 }) {
   const current = flow.at(-1) ?? {
@@ -321,6 +324,7 @@ export function DashboardView({
           icon={Target}
         />
       </section>
+      {bills}
       {children ? (
         // Com cartões, as faturas ficam ao lado de "Onde você mais gasta" e a evolução do caixa ocupa a linha de baixo.
         <>

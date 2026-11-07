@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compoundProjection, getBudgetAlerts, getBudgetsToCopy, previousMonthOf, getCategoryComparison, getFixedExpenses, getHoldingPerformance, getMonthlyForecast, getSpendingAlerts } from './finance'
+import { compoundProjection, getBudgetAlerts, getBudgetsToCopy, getNetWorthHistory, getPendingBills, previousMonthOf, getCategoryComparison, getFixedExpenses, getHoldingPerformance, getMonthlyForecast, getSpendingAlerts } from './finance'
 
 const categories = [{ id: 1, name: 'Mercado' }, { id: 2, name: 'Lazer' }]
 const tx = (over: Partial<Parameters<typeof getBudgetAlerts>[0][number]>) => ({
@@ -224,5 +224,37 @@ describe('getBudgetsToCopy', () => {
   it('mês anterior vira o ano', () => {
     expect(previousMonthOf('2027-01')).toBe('2026-12')
     expect(previousMonthOf('2026-11')).toBe('2026-10')
+  })
+})
+
+describe('getPendingBills', () => {
+  const bill = (date: string, billStatus: string | null, type = 'expense') => ({ id: date, type, date, billStatus })
+  it('lista as pendentes vencidas e as que vencem dentro do prazo, da mais atrasada à mais distante', () => {
+    const items = [bill('2026-11-20', 'pending'), bill('2026-11-01', 'pending'), bill('2026-11-09', 'pending'), bill('2026-11-05', 'paid'), bill('2026-11-06', null), bill('2026-11-08', 'pending', 'income')]
+    expect(getPendingBills(items, '2026-11-07', 3).map(item => [item.date, item.daysLeft])).toEqual([['2026-11-01', -6], ['2026-11-09', 2]])
+    expect(getPendingBills(items, '2026-11-07', 30).map(item => item.date)).toEqual(['2026-11-01', '2026-11-09', '2026-11-20'])
+  })
+})
+
+describe('getNetWorthHistory', () => {
+  const tx = (date: string, type: string, amountCents: number) => ({ date, type, amountCents })
+  it('soma saldos iniciais, lançamentos até o fim de cada mês e investimentos pela data da aplicação', () => {
+    const history = getNetWorthHistory(
+      [{ initialBalanceCents: 100000 }, { initialBalanceCents: -20000 }],
+      [tx('2026-09-05', 'income', 50000), tx('2026-09-30', 'expense', 10000), tx('2026-10-10', 'expense', 5000), tx('2026-11-10', 'income', 99999)],
+      [{ quantity: '2', averageCostCents: 10000, applicationDate: '2026-10-15' }, { quantity: '1', averageCostCents: 7000, createdAt: new Date('2026-11-02T15:00:00Z') }],
+      '2026-11-07',
+    )
+    expect(history).toEqual([
+      { month: '2026-09', valueCents: 120000 },
+      { month: '2026-10', valueCents: 135000 },
+      { month: '2026-11', valueCents: 142000 },
+    ])
+  })
+  it('começa no primeiro mês com movimento, limitado aos últimos meses pedidos', () => {
+    const history = getNetWorthHistory([], [tx('2024-01-10', 'income', 100)], [], '2026-11-07', 12)
+    expect(history.map(item => item.month)).toEqual(['2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'])
+    expect(history.every(item => item.valueCents === 100)).toBe(true)
+    expect(getNetWorthHistory([{ initialBalanceCents: 500 }], [], [], '2026-11-07')).toEqual([{ month: '2026-11', valueCents: 500 }])
   })
 })

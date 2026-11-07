@@ -13,6 +13,7 @@ import { GoalsFeatureCard } from "@/components/goals-feature-card";
 import { Account, Budget, Category, GoalType, HideValueButton, Holding, Transfer, Tx, setAllMoneyHidden, useHiddenValue, useStoredFlag } from "@/components/finance/shared";
 import { getPurchaseDueDate } from "@/lib/accounts";
 import { CardBillsCard } from "@/components/finance/card-bills";
+import { BillsCard } from "@/components/finance/bills-card";
 import { AccountsView } from "@/components/finance/accounts-view";
 import { FormDialog } from "@/components/finance/form-dialog";
 import { TransactionTable } from "@/components/finance/transactions";
@@ -310,6 +311,7 @@ export function FinanceDashboard({
                 flow={dashboardSummary.flow}
                 byCategory={dashboardSummary.byCategory}
                 holdings={holdings}
+                bills={<BillsCard transactions={transactions} currentDate={currentDate} />}
               >
                 {cards.length > 0 && (
                   <CardBillsCard
@@ -345,6 +347,8 @@ export function FinanceDashboard({
               byCategory={byCategory}
               transactions={transactions}
               currentDate={currentDate}
+              accounts={accounts}
+              holdings={holdings}
             />
           )}
           {view === "tools" && (

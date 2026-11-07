@@ -1,3 +1,5 @@
+import { addMonthsToDate, daysBetween } from './accounts'
+
 type BudgetTx = { type: string; amountCents: number; date: string; categoryId: number | null; categoryName?: string }
 type BudgetCategory = { id: number; name: string }
 type BudgetItem = { name: string; limitCents: number; month: string; categoryId: number | null }
@@ -196,4 +198,51 @@ export function getFixedExpenses(transactions: FixedTx[], currentDate: string, m
   const averageIncome = incomeByMonth.size ? [...incomeByMonth.values()].reduce((sum, value) => sum + value, 0) / incomeByMonth.size : 0
   const totalCents = items.reduce((sum, item) => sum + item.monthlyCents, 0)
   return { items, totalCents, averageIncomeCents: Math.round(averageIncome), shareOfIncome: averageIncome ? Math.round((totalCents / averageIncome) * 100) : null }
+}
+
+type BillTx = { type: string; date: string; billStatus?: string | null }
+
+/** Contas a pagar ainda pendentes que já venceram ou vencem em até `withinDays` dias, da mais atrasada à mais distante. */
+export function getPendingBills<T extends BillTx>(transactions: T[], currentDate: string, withinDays: number) {
+  return transactions
+    .filter(item => item.type === 'expense' && item.billStatus === 'pending' && daysBetween(currentDate, item.date) <= withinDays)
+    .map(item => ({ ...item, daysLeft: daysBetween(currentDate, item.date) }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+}
+
+type WorthTx = { type: string; amountCents: number; date: string }
+type WorthHolding = { quantity: string; averageCostCents: number; applicationDate?: string | null; createdAt?: Date | string | null }
+
+const holdingDate = (holding: WorthHolding) =>
+  holding.applicationDate ?? (holding.createdAt instanceof Date ? holding.createdAt.toISOString() : holding.createdAt ?? '').slice(0, 10)
+
+/**
+ * Patrimônio no fim de cada mês, até `currentDate` no mês atual: saldo inicial das contas (a dívida dos cartões entra
+ * negativa), mais receitas e menos despesas até a data, mais os investimentos pelo valor aplicado.
+ * Transferências só movem dinheiro entre contas e não mudam o total.
+ * Começa no primeiro mês com movimento, limitado aos últimos `months` meses.
+ */
+export function getNetWorthHistory(accounts: { initialBalanceCents: number }[], transactions: WorthTx[], holdings: WorthHolding[], currentDate: string, months = 12) {
+  const base = accounts.reduce((sum, account) => sum + account.initialBalanceCents, 0)
+  const dates = [...transactions.map(item => item.date), ...holdings.map(holdingDate)].filter(Boolean).sort()
+  const currentMonth = currentDate.slice(0, 7)
+  const earliest = addMonthsToDate(`${currentMonth}-01`, 1 - months).slice(0, 7)
+  const first = !dates.length ? currentMonth : dates[0].slice(0, 7) > earliest ? dates[0].slice(0, 7) : earliest
+  const history: { month: string; valueCents: number }[] = []
+  for (let month = first; month <= currentMonth; month = addMonthsToDate(`${month}-01`, 1).slice(0, 7)) {
+    // Datas são texto AAAA-MM-DD: "-31" fica depois de qualquer dia do mês, mesmo nos meses mais curtos.
+    const end = month === currentMonth ? currentDate : `${month}-31`
+    let value = base
+    for (const item of transactions) {
+      if (item.date > end) continue
+      if (item.type === 'income') value += item.amountCents
+      else if (item.type === 'expense') value -= item.amountCents
+    }
+    for (const holding of holdings) {
+      const date = holdingDate(holding)
+      if (!date || date <= end) value += Math.round(Number(holding.quantity) * holding.averageCostCents)
+    }
+    history.push({ month, valueCents: value })
+  }
+  return history
 }

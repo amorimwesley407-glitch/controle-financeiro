@@ -51,6 +51,7 @@ export function FormDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [recurring, setRecurring] = useState(false);
+  const [bill, setBill] = useState(false);
   const [accountId, setAccountId] = useState("none");
   const [goalAccountId, setGoalAccountId] = useState("none");
   const [installments, setInstallments] = useState("1");
@@ -87,6 +88,8 @@ export function FormDialog({
     transactionType === "expense" &&
     accounts.some((account) => String(account.id) === accountId && account.kind === "credit_card");
   const isInstallment = canSplit && Number(installments) > 1;
+  // Compra no cartão não é conta a pagar: quem vence é a fatura.
+  const canBeBill = transactionType === "expense" && !accounts.some((account) => String(account.id) === accountId && account.kind === "credit_card");
   const installmentPreview = isInstallment ? previewInstallments(amount, Number(installments), Number(installmentStart), amountMode) : null;
   const meta = {
     transaction: ["Novo lançamento", "Registre uma receita ou despesa."],
@@ -122,6 +125,7 @@ export function FormDialog({
       setInstallments("1");
       setInstallmentStart("1");
       setAmountMode("total");
+      setBill(false);
     }
     setOpen(next);
   }
@@ -238,7 +242,7 @@ export function FormDialog({
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Primeira data">
+                <Field label={canBeBill && bill ? "Vencimento" : "Primeira data"}>
                   <Input
                     name="date"
                     type="date"
@@ -322,6 +326,23 @@ export function FormDialog({
                     {installmentPreview ?? `Para uma compra que você já está pagando, informe em qual parcela está. As anteriores não são lançadas.`}
                   </p>
                 </>
+              )}
+              {canBeBill && (
+                <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
+                  <input
+                    name="bill"
+                    type="checkbox"
+                    value="true"
+                    checked={bill}
+                    onChange={(event) => setBill(event.target.checked)}
+                  />
+                  <span>
+                    <span className="block font-medium">Conta a pagar</span>
+                    <span className="text-xs text-muted-foreground">
+                      Boleto, luz, aluguel… Fica pendente e o app avisa perto do vencimento até você marcar como paga.
+                    </span>
+                  </span>
+                </label>
               )}
               {!isInstallment && (
                 <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">

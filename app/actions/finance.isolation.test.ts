@@ -266,6 +266,28 @@ describe.skipIf(!testDatabaseUrl)('isolamento entre usuários', () => {
     expect(imported).toEqual([{ description: 'Padaria', accountId: card }, { description: 'Estorno Loja', accountId: card }])
   })
 
+  it('contas a pagar: cria pendente, marca como paga só as próprias e mantém o status ao editar', async () => {
+    const [{ id: card }] = await sql`INSERT INTO "financial_accounts" ("userId", "name", "kind", "closingDay", "dueDay") VALUES (${ALICE}, 'Cartão', 'credit_card', 10, 20) RETURNING "id"`
+    const statusOf = async (description: string) => (await sql`SELECT "billStatus" FROM "transactions" WHERE "userId" = ${ALICE} AND "description" = ${description} ORDER BY "date"`).map(row => row.billStatus)
+    await actions.addTransaction(form({ description: 'Luz', type: 'expense', date: '2026-11-10', amount: '200', bill: 'true', recurring: 'true', recurrenceEnd: '2027-01-10' }))
+    expect(await statusOf('Luz')).toEqual(['pending', 'pending', 'pending'])
+    await actions.addTransaction(form({ description: 'Loja', type: 'expense', date: '2026-11-10', amount: '50', bill: 'true', accountId: String(card) }))
+    await actions.addTransaction(form({ description: 'Bônus', type: 'income', date: '2026-11-10', amount: '50', bill: 'true' }))
+    expect([...(await statusOf('Loja')), ...(await statusOf('Bônus'))]).toEqual([null, null])
+
+    const [light] = await sql`SELECT "id" FROM "transactions" WHERE "userId" = ${ALICE} AND "description" = 'Luz' ORDER BY "date" LIMIT 1`
+    await actions.setBillPaid(light.id, true)
+    await actions.updateTransaction(light.id, form({ description: 'Conta de luz', type: 'expense', date: '2026-11-10', amount: '210', bill: 'true' }))
+    expect((await statusOf('Conta de luz'))).toEqual(['paid'])
+    await actions.updateTransaction(light.id, form({ description: 'Conta de luz', type: 'expense', date: '2026-11-10', amount: '210' }))
+    expect((await statusOf('Conta de luz'))).toEqual([null])
+
+    const [bobBill] = await sql`INSERT INTO "transactions" ("userId", "type", "description", "amountCents", "date", "billStatus") VALUES (${BOB}, 'expense', 'Aluguel', 100000, '2026-11-05', 'pending') RETURNING "id"`
+    await expect(actions.setBillPaid(bobBill.id, true)).rejects.toThrow('não encontrada')
+    await expect(actions.setBillPaid(aliceTransactionId, true)).rejects.toThrow('não encontrada')
+    expect((await sql`SELECT "billStatus" FROM "transactions" WHERE "id" = ${bobBill.id}`)[0].billStatus).toBe('pending')
+  })
+
   describe('metas ligadas a contas e aparência do cartão', () => {
     const goalForm = (fields: Record<string, string>) => form({ name: 'Reserva', target: '1000', current: '0', deadline: '', ...fields })
 

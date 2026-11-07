@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { getBudgetAlerts } from "@/lib/finance";
+import { getBudgetAlerts, getPendingBills } from "@/lib/finance";
 import { getCardDueAlerts } from "@/lib/accounts";
-import { Bell, CreditCard, LogOut, ReceiptText, Settings2, Target, TriangleAlert, UserRound } from "lucide-react";
+import { Bell, CalendarClock, CreditCard, LogOut, ReceiptText, Settings2, Target, TriangleAlert, UserRound } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ export function NotificationMenu({
 }) {
   const [open, setOpen] = useState(false);
   const dueAlerts = getCardDueAlerts(cards, transactions, transfers, currentDate);
+  const billAlerts = getPendingBills(transactions, currentDate, 3);
   const alerts = getBudgetAlerts(
     transactions,
     budgets,
@@ -54,7 +55,7 @@ export function NotificationMenu({
         (!transaction.categoryId || !budgetCategoryIds.has(transaction.categoryId)),
     )
     .slice(0, 5);
-  const notificationCount = dueAlerts.length + alerts.length + highExpenses.length;
+  const notificationCount = dueAlerts.length + billAlerts.length + alerts.length + highExpenses.length;
   return (
     <div className="relative z-50">
       <Button
@@ -83,7 +84,7 @@ export function NotificationMenu({
             <div className="flex items-center justify-between px-2 py-2">
               <div>
                 <p className="text-sm font-semibold">Notificações</p>
-                <p className="text-xs text-muted-foreground">Faturas, orçamentos e despesas altas</p>
+                <p className="text-xs text-muted-foreground">Contas, faturas, orçamentos e despesas altas</p>
               </div>
               {notificationCount > 0 && <Badge variant="secondary">{notificationCount}</Badge>}
             </div>
@@ -107,6 +108,27 @@ export function NotificationMenu({
                             ? "Vence hoje."
                             : `Vence em ${alert.daysLeft} ${alert.daysLeft === 1 ? "dia" : "dias"}.`}{" "}
                         Registre o pagamento em Contas e cartões.
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {billAlerts.map((bill) => (
+                  <div key={`bill-${bill.id}`} className="flex gap-3 rounded-lg p-2.5 hover:bg-muted/60">
+                    <span className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${bill.daysLeft < 0 ? "bg-rose-500/10 text-rose-400" : "bg-amber-500/10 text-amber-400"}`}>
+                      <CalendarClock className="size-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex justify-between gap-3 text-sm">
+                        <span className="truncate font-medium">{bill.description}</span>
+                        <span className="font-mono text-xs font-semibold">{brl(bill.amountCents)}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {bill.daysLeft < 0
+                          ? `Conta vencida há ${-bill.daysLeft} ${bill.daysLeft === -1 ? "dia" : "dias"}.`
+                          : bill.daysLeft === 0
+                            ? "Conta vence hoje."
+                            : `Conta vence em ${bill.daysLeft} ${bill.daysLeft === 1 ? "dia" : "dias"}.`}{" "}
+                        Marque como paga no Painel.
                       </p>
                     </div>
                   </div>
@@ -147,7 +169,7 @@ export function NotificationMenu({
               <div className="px-3 py-8 text-center">
                 <Bell className="mx-auto mb-2 size-5 text-cyan-400" />
                 <p className="text-sm font-medium">Tudo sob controle</p>
-                <p className="mt-1 text-xs text-muted-foreground">Nenhuma fatura perto do vencimento, nenhum orçamento atingiu 70% e não há despesas altas sem cobertura.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Nenhuma conta ou fatura perto do vencimento, nenhum orçamento atingiu 70% e não há despesas altas sem cobertura.</p>
               </div>
             )}
           </div>
