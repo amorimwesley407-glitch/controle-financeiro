@@ -28,6 +28,8 @@ export type Tx = {
   installmentTotal?: number | null;
   /** Conta a pagar: "pending" até ser marcada como paga, "paid" depois. Nulo é um lançamento comum. */
   billStatus?: string | null;
+  /** Partes de um lançamento dividido entre categorias têm o mesmo grupo. */
+  splitGroup?: string | null;
 };
 
 export type Account = {

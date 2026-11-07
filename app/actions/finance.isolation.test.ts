@@ -256,6 +256,45 @@ describe.skipIf(!testDatabaseUrl)('isolamento entre usuários', () => {
       const [{ id: installment }] = await sql`INSERT INTO "transactions" ("userId", "type", "description", "amountCents", "date", "installmentGroup", "installmentNumber", "installmentTotal") VALUES (${ALICE}, 'expense', 'TV', 1000, '2026-10-03', ${'1f8b2a4e-1c3d-4e5f-8a9b-0c1d2e3f4a5b'}, 1, 2) RETURNING "id"`
       await expect(actions.splitTransaction(installment, [{ categoryId: null, amountCents: 500 }, { categoryId: null, amountCents: 500 }])).rejects.toThrow('Parcelas')
     })
+
+    it('compra dividida fica agrupada: refaz a divisão, junta de novo e exclui inteira', async () => {
+      const [{ id: transporte }] = await sql`SELECT "id" FROM "categories" WHERE "userId" = ${ALICE} AND "name" = 'Transporte'`
+      const [{ id }] = await sql`INSERT INTO "transactions" ("userId", "type", "description", "amountCents", "date") VALUES (${ALICE}, 'expense', 'Feira', 9000, '2026-10-04') RETURNING "id"`
+      const parts = () => sql`SELECT "id", "amountCents", "categoryId", "splitGroup", "description", "date" FROM "transactions" WHERE "userId" = ${ALICE} AND "description" IN ('Feira', 'Feira livre') ORDER BY "id"`
+      await actions.splitTransaction(id, [{ categoryId: null, amountCents: 6000 }, { categoryId: transporte, amountCents: 3000 }])
+      const first = await parts()
+      const group = first[0].splitGroup
+      expect(group).toMatch(/^[0-9a-f-]{36}$/)
+      expect(first.map(row => [row.amountCents, row.splitGroup])).toEqual([[6000, group], [3000, group]])
+
+      // Refazer a partir de qualquer parte usa o total da compra e mantém o grupo.
+      await expect(actions.splitTransaction(first[1].id, [{ categoryId: null, amountCents: 3000 }, { categoryId: null, amountCents: 3000 }])).rejects.toThrow('somar')
+      await actions.splitTransaction(first[1].id, [{ categoryId: null, amountCents: 4000 }, { categoryId: transporte, amountCents: 3000 }, { categoryId: null, amountCents: 2000 }])
+      const second = await parts()
+      expect(second.map(row => row.amountCents)).toEqual([4000, 3000, 2000])
+      expect(second[0].id).toBe(id)
+      expect(new Set(second.map(row => row.splitGroup))).toEqual(new Set([group]))
+
+      // Editar uma parte muda descrição e data de todas, mas não o valor nem a categoria.
+      await actions.updateTransaction(second[1].id, form({ description: 'Feira livre', type: 'expense', date: '2026-10-05', amount: '999', categoryId: 'none' }))
+      expect((await parts()).map(row => [row.description, row.date, row.amountCents, row.categoryId])).toEqual([
+        ['Feira livre', '2026-10-05', 4000, null], ['Feira livre', '2026-10-05', 3000, transporte], ['Feira livre', '2026-10-05', 2000, null],
+      ])
+
+      // Outro usuário não mexe no grupo.
+      state.userId = BOB
+      await expect(actions.joinSplit(group)).rejects.toThrow('não encontrado')
+      await expect(actions.deleteSplit(group)).rejects.toThrow('não encontrado')
+      state.userId = ALICE
+      expect(await parts()).toHaveLength(3)
+
+      await actions.joinSplit(group)
+      expect((await parts()).map(row => [row.id, row.amountCents, row.splitGroup])).toEqual([[id, 9000, null]])
+
+      await actions.splitTransaction(id, [{ categoryId: null, amountCents: 5000 }, { categoryId: null, amountCents: 4000 }])
+      await actions.deleteSplit((await parts())[0].splitGroup)
+      expect(await parts()).toHaveLength(0)
+    })
   })
 
   it('copia os orçamentos do mês anterior só do próprio usuário, sem duplicar', async () => {

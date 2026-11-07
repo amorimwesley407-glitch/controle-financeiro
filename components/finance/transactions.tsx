@@ -2,8 +2,8 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import Image from "next/image";
-import { Download, Pencil, Plus, ReceiptText, Search, Settings2, Split, Trash2, Upload, WalletCards } from "lucide-react";
-import { deleteInstallments, deleteTransaction, importTransactions, splitTransaction, updateTransaction } from "@/app/actions/finance";
+import { ChevronRight, Download, Merge, Pencil, Plus, ReceiptText, Search, Settings2, Split, Trash2, Upload, WalletCards } from "lucide-react";
+import { deleteInstallments, deleteSplit, deleteTransaction, importTransactions, joinSplit, splitTransaction, updateTransaction } from "@/app/actions/finance";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,12 +20,16 @@ export function EditTransactionDialog({
   transaction,
   categories,
   accounts = [],
+  splitParts,
 }: {
   transaction: Tx;
   categories: Category[];
   accounts?: Account[];
+  /** Partes da compra dividida: valor, tipo e categoria ficam com "Editar divisão" e o resto vale para todas. */
+  splitParts?: Tx[];
 }) {
   const [open, setOpen] = useState(false);
+  const isSplit = Boolean(splitParts);
   const [accountId, setAccountId] = useState(transaction.accountId ? String(transaction.accountId) : "none");
   const [repeatFromHere, setRepeatFromHere] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -126,41 +130,52 @@ export function EditTransactionDialog({
               <Input name="description" defaultValue={transaction.description} required />
             </Field>
           )}
+          {isSplit ? (
+            <>
+              <input type="hidden" name="type" value={transaction.type} />
+              <input type="hidden" name="amount" value={(transaction.amountCents / 100).toFixed(2)} />
+              <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+                Compra de {brl(splitParts!.reduce((sum, part) => sum + part.amountCents, 0))} dividida em {splitParts!.length} categorias. Para mudar valores ou categorias, use <span className="font-medium text-foreground">Editar divisão</span>. A descrição, a data, a conta e as observações daqui valem para todas as partes.
+              </p>
+            </>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Tipo">
+                <Select
+                  name="type"
+                  value={type}
+                  onValueChange={(value) => {
+                    const nextType = String(value);
+                    setType(nextType);
+                    const selectedCategory = categories.find((category) => String(category.id) === categoryId);
+                    if (!selectedCategory || selectedCategory.type !== nextType) setCategoryId("none");
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue>{transactionTypeLabel}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="expense">Despesa</SelectItem>
+                      <SelectItem value="income">Receita</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Valor">
+                <Input
+                  name="amount"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  defaultValue={(transaction.amountCents / 100).toFixed(2)}
+                  required
+                />
+              </Field>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Tipo">
-              <Select
-                name="type"
-                value={type}
-                onValueChange={(value) => {
-                  const nextType = String(value);
-                  setType(nextType);
-                  const selectedCategory = categories.find((category) => String(category.id) === categoryId);
-                  if (!selectedCategory || selectedCategory.type !== nextType) setCategoryId("none");
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue>{transactionTypeLabel}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="expense">Despesa</SelectItem>
-                    <SelectItem value="income">Receita</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Valor">
-              <Input
-                name="amount"
-                type="number"
-                min="0.01"
-                step="0.01"
-                defaultValue={(transaction.amountCents / 100).toFixed(2)}
-                required
-              />
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
+            {!isSplit && (
             <Field label="Categoria">
               <Select
                 name="categoryId"
@@ -192,6 +207,7 @@ export function EditTransactionDialog({
                 </SelectContent>
               </Select>
             </Field>
+            )}
             <Field label="Data">
               <Input
                 name="date"
@@ -245,7 +261,7 @@ export function EditTransactionDialog({
               Remover imagem própria e voltar a usar a imagem da categoria
             </label>
           )}
-          {canBeBill && (
+          {canBeBill && !isSplit && (
             <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
               <input name="bill" type="checkbox" value="true" defaultChecked={Boolean(transaction.billStatus)} />
               <span>
@@ -276,7 +292,7 @@ export function EditTransactionDialog({
               </span>
             </fieldset>
           )}
-          {!isInstallment && (
+          {!isInstallment && !isSplit && (
             <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
               <input
                 name="recurring"
@@ -308,7 +324,7 @@ export function EditTransactionDialog({
           <Button type="submit" disabled={pending}>
             {pending ? "Salvando…" : "Salvar alterações"}
           </Button>
-          {!isInstallment && <SplitTransactionDialog transaction={transaction} categories={categories} asButton onDone={() => setOpen(false)} />}
+          {!isInstallment && !isSplit && <SplitTransactionDialog transaction={transaction} categories={categories} asButton onDone={() => setOpen(false)} />}
         </form>
       </DialogContent>
     </Dialog>
@@ -339,27 +355,37 @@ function CategorySelect({ value, onChange, options, label }: { value: string; on
  * Divide um lançamento entre categorias, como um mercado com comida e limpeza.
  * Você informa as outras partes; a primeira fica com o que sobra, então a soma sempre fecha.
  */
-export function SplitTransactionDialog({ transaction, categories, asButton = false, onDone }: {
+export function SplitTransactionDialog({ transaction, categories, parts, asButton = false, buttonClassName = "w-full sm:hidden", onDone }: {
   transaction: Tx;
   categories: Category[];
+  /** Partes de uma compra já dividida: a janela vira "Editar divisão", já preenchida. */
+  parts?: Tx[];
   /** No celular a linha não tem espaço para mais um ícone: o botão fica dentro da janela de edição. */
   asButton?: boolean;
+  buttonClassName?: string;
   onDone?: () => void;
 }) {
   const options = categories.filter((category) => category.type === transaction.type);
-  const initialCategory = options.some((category) => category.id === transaction.categoryId) ? String(transaction.categoryId) : "none";
+  const categoryValue = (item: Tx) => (options.some((category) => category.id === item.categoryId) ? String(item.categoryId) : "none");
+  const initialCategory = categoryValue(parts?.[0] ?? transaction);
+  const initialOthers = (): SplitPart[] =>
+    parts && parts.length > 1
+      ? parts.slice(1).map((part, index) => ({ key: index + 1, categoryId: categoryValue(part), amount: (part.amountCents / 100).toFixed(2) }))
+      : [{ key: 1, categoryId: "none", amount: "" }];
+  const totalCents = parts ? parts.reduce((sum, part) => sum + part.amountCents, 0) : transaction.amountCents;
+  const editing = Boolean(parts);
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [firstCategory, setFirstCategory] = useState(initialCategory);
-  const [others, setOthers] = useState<SplitPart[]>([{ key: 1, categoryId: "none", amount: "" }]);
+  const [others, setOthers] = useState<SplitPart[]>(initialOthers);
   const toCents = (amount: string) => Math.round((Number(amount.replace(",", ".")) || 0) * 100);
   const othersCents = others.reduce((sum, part) => sum + toCents(part.amount), 0);
-  const firstCents = transaction.amountCents - othersCents;
+  const firstCents = totalCents - othersCents;
   const valid = firstCents > 0 && others.every((part) => toCents(part.amount) > 0);
   function changeOpen(next: boolean) {
     if (next) {
       setFirstCategory(initialCategory);
-      setOthers([{ key: 1, categoryId: "none", amount: "" }]);
+      setOthers(initialOthers());
     }
     setOpen(next);
   }
@@ -376,7 +402,7 @@ export function SplitTransactionDialog({ transaction, categories, asButton = fal
         ]);
         setOpen(false);
         onDone?.();
-        toast.success(`Lançamento dividido em ${others.length + 1} partes.`);
+        toast.success(editing ? "Divisão atualizada." : `Lançamento dividido em ${others.length + 1} partes.`);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Não foi possível dividir o lançamento.");
       }
@@ -385,20 +411,20 @@ export function SplitTransactionDialog({ transaction, categories, asButton = fal
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
       {asButton ? (
-        <DialogTrigger render={<Button type="button" variant="outline" className="w-full sm:hidden" />}>
+        <DialogTrigger render={<Button type="button" variant="outline" size={editing ? "sm" : "default"} className={buttonClassName} />}>
           <Split data-icon="inline-start" />
-          Dividir entre categorias
+          {editing ? "Editar divisão" : "Dividir entre categorias"}
         </DialogTrigger>
       ) : (
-        <DialogTrigger render={<Button variant="ghost" size="icon-sm" className="hidden sm:inline-flex" aria-label={`Dividir ${transaction.description}`} title="Dividir entre categorias" />}>
+        <DialogTrigger render={<Button variant="ghost" size="icon-sm" className="hidden sm:inline-flex" aria-label={`${editing ? "Editar divisão de" : "Dividir"} ${transaction.description}`} title={editing ? "Editar divisão" : "Dividir entre categorias"} />}>
           <Split />
         </DialogTrigger>
       )}
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Dividir entre categorias</DialogTitle>
+          <DialogTitle>{editing ? "Editar divisão" : "Dividir entre categorias"}</DialogTitle>
           <DialogDescription>
-            “{transaction.description}”, {brl(transaction.amountCents)} em {new Date(`${transaction.date}T12:00:00`).toLocaleDateString("pt-BR")}. Cada parte vira um lançamento com a própria categoria.
+            “{transaction.description}”, {brl(totalCents)} em {new Date(`${transaction.date}T12:00:00`).toLocaleDateString("pt-BR")}. Cada parte vira um lançamento com a própria categoria.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
@@ -460,12 +486,121 @@ export function SplitTransactionDialog({ transaction, categories, asButton = fal
   );
 }
 
+/**
+ * Compra dividida entre categorias: uma linha com o total, que abre para mostrar cada parte.
+ * Editar, editar a divisão e excluir valem para a compra inteira.
+ */
+function SplitGroupRows({ parts, categories, accounts }: { parts: Tx[]; categories: Category[]; accounts: Account[] }) {
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const head = parts[0];
+  const total = parts.reduce((sum, part) => sum + part.amountCents, 0);
+  const group = head.splitGroup!;
+  function join() {
+    startTransition(async () => {
+      try {
+        await joinSplit(group);
+        toast.success(`“${head.description}” voltou a ser um lançamento só.`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Não foi possível juntar as partes.");
+      }
+    });
+  }
+  function remove() {
+    if (!window.confirm(`Excluir “${head.description}” inteira, com as ${parts.length} partes? Esta ação não pode ser desfeita.`)) return;
+    startTransition(async () => {
+      try {
+        await deleteSplit(group);
+        toast.success("Lançamento excluído.");
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Não foi possível excluir o lançamento.");
+      }
+    });
+  }
+  const amountClass = head.type === "income" ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400";
+  const sign = head.type === "expense" ? "−" : "+";
+  return (
+    <>
+      <TableRow>
+        <TableCell>
+          <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} className="flex min-w-0 items-center gap-3 text-left">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50 text-muted-foreground">
+              <ChevronRight className={`size-4 transition-transform ${open ? "rotate-90" : ""}`} />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate font-medium">{head.description}</span>
+              <span className="block text-xs text-muted-foreground">
+                Dividido em {parts.length} categorias
+                {head.accountName && ` · ${head.accountName}`}
+              </span>
+            </span>
+          </button>
+        </TableCell>
+        <TableCell>{new Date(`${head.date}T12:00:00`).toLocaleDateString("pt-BR")}</TableCell>
+        <TableCell>
+          <Badge variant={head.type === "income" ? "default" : "secondary"}>{head.type === "income" ? "Receita" : "Despesa"}</Badge>
+        </TableCell>
+        <TableCell className={`text-right font-mono font-semibold ${amountClass}`}>
+          {sign}
+          {brl(total)}
+        </TableCell>
+        <TableCell>
+          <div className="flex justify-end">
+            <EditTransactionDialog transaction={head} categories={categories} accounts={accounts} splitParts={parts} />
+            <SplitTransactionDialog transaction={head} categories={categories} parts={parts} />
+            <Button variant="ghost" size="icon-sm" aria-label={`Excluir ${head.description}`} onClick={remove} disabled={pending}>
+              <Trash2 />
+            </Button>
+          </div>
+        </TableCell>
+      </TableRow>
+      {open && (
+        <>
+          {parts.map((part) => (
+            <TableRow key={part.id} className="bg-muted/30 hover:bg-muted/30">
+              <TableCell className="pl-8">
+                <TransactionLabel transaction={{ ...part, description: categories.find((category) => category.id === part.categoryId)?.name ?? "Sem categoria", accountName: undefined, notes: null }} categories={categories} titleOnly />
+              </TableCell>
+              <TableCell />
+              <TableCell />
+              <TableCell className={`text-right font-mono ${amountClass}`}>
+                {sign}
+                {brl(part.amountCents)}
+              </TableCell>
+              <TableCell />
+            </TableRow>
+          ))}
+          <TableRow className="bg-muted/30 hover:bg-muted/30">
+            {/* Sem colSpan: no celular a tabela esconde as colunas 2 e 3, e uma célula larga criaria colunas sobrando. */}
+            <TableCell className="pl-8">
+              <div className="flex flex-wrap gap-2">
+                <SplitTransactionDialog transaction={head} categories={categories} parts={parts} asButton buttonClassName="" />
+                <Button variant="ghost" size="sm" onClick={join} disabled={pending}>
+                  <Merge data-icon="inline-start" />
+                  Juntar de novo
+                </Button>
+              </div>
+            </TableCell>
+            <TableCell />
+            <TableCell />
+            <TableCell />
+            <TableCell />
+          </TableRow>
+        </>
+      )}
+    </>
+  );
+}
+
 export function TransactionLabel({
   transaction,
   categories,
+  titleOnly = false,
 }: {
   transaction: Tx;
   categories: Category[];
+  /** Só o ícone e o título, sem a linha de detalhes (usado nas partes de uma compra dividida). */
+  titleOnly?: boolean;
 }) {
   const category = categories.find(
     (item) => item.id === transaction.categoryId,
@@ -518,14 +653,14 @@ export function TransactionLabel({
       </span>
       <div className="min-w-0">
         <p className="truncate font-medium">{transaction.description}</p>
-        <p className="text-xs text-muted-foreground">
+        {!titleOnly && <p className="text-xs text-muted-foreground">
           {category?.name ?? transaction.categoryName ?? "Sem categoria"}
           {transaction.accountName && ` · ${transaction.accountName}`}
           {transaction.installmentTotal && ` · Parcela ${transaction.installmentNumber}/${transaction.installmentTotal}`}
           {transaction.billStatus === "pending" && " · A pagar"}
           {transaction.billStatus === "paid" && " · Paga"}
-        </p>
-        {transaction.notes && <p className="truncate text-xs text-muted-foreground" title={transaction.notes}>{transaction.notes}</p>}
+        </p>}
+        {!titleOnly && transaction.notes && <p className="truncate text-xs text-muted-foreground" title={transaction.notes}>{transaction.notes}</p>}
       </div>
     </div>
   );
@@ -568,6 +703,21 @@ export function TransactionTable({
         t.amountCents <= max,
     );
   }, [all, from, kind, maximum, minimum, query, to, transactions]);
+  // Partes de uma compra dividida viram um item só, na posição da primeira que aparece.
+  const items = useMemo(() => {
+    const result: { key: string; t: Tx; parts?: Tx[] }[] = [];
+    const seen = new Set<string>();
+    for (const t of rows) {
+      if (!t.splitGroup) result.push({ key: String(t.id), t });
+      else if (!seen.has(t.splitGroup)) {
+        seen.add(t.splitGroup);
+        // O grupo usa todas as partes da compra, mesmo as que um filtro esconderia, para o total não sair errado.
+        const parts = transactions.filter((item) => item.splitGroup === t.splitGroup).sort((a, b) => a.id - b.id);
+        result.push(parts.length > 1 ? { key: `split-${t.splitGroup}`, t: parts[0], parts } : { key: String(t.id), t });
+      }
+    }
+    return result;
+  }, [rows, transactions]);
   async function removeInstallments(transaction: Tx) {
     setInstallmentToRemove(null);
     try {
@@ -901,8 +1051,10 @@ export function TransactionTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((t) => (
-                <TableRow key={t.id}>
+              {items.map(({ key, t, parts }) => parts ? (
+                <SplitGroupRows key={key} parts={parts} categories={categories} accounts={accounts} />
+              ) : (
+                <TableRow key={key}>
                   <TableCell>
                     <TransactionLabel transaction={t} categories={categories} />
                   </TableCell>
