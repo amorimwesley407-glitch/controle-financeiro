@@ -190,6 +190,53 @@ describe.skipIf(!testDatabaseUrl)('isolamento entre usuários', () => {
         { date: '2027-03-31', amountCents: 3333 },
       ])
     })
+
+    it('lança só as parcelas que faltam de uma compra que já estava sendo paga', async () => {
+      const [{ id: card }] = await sql`INSERT INTO "financial_accounts" ("userId", "name", "kind", "closingDay", "dueDay") VALUES (${ALICE}, 'Cartão', 'credit_card', 10, 20) RETURNING "id"`
+      const rows = (description: string) => sql`SELECT "date", "amountCents", "installmentNumber", "installmentTotal" FROM "transactions" WHERE "accountId" = ${card} AND "description" = ${description} ORDER BY "date"`
+      await actions.addTransaction(form({ description: 'Geladeira', type: 'expense', date: '2026-11-05', amount: '150', accountId: String(card), installments: '10', installmentStart: '4', amountMode: 'installment' }))
+      const fridge = await rows('Geladeira')
+      expect(fridge.map(row => [row.installmentNumber, row.installmentTotal, row.amountCents])).toEqual([4, 5, 6, 7, 8, 9, 10].map(number => [number, 10, 15000]))
+      expect(fridge.map(row => row.date)).toEqual(['2026-11-05', '2026-12-05', '2027-01-05', '2027-02-05', '2027-03-05', '2027-04-05', '2027-05-05'])
+
+      await actions.addTransaction(form({ description: 'Sofá', type: 'expense', date: '2026-11-05', amount: '1000', accountId: String(card), installments: '10', installmentStart: '8' }))
+      expect((await rows('Sofá')).map(row => [row.installmentNumber, row.amountCents])).toEqual([[8, 10000], [9, 10000], [10, 10000]])
+
+      await expect(actions.addTransaction(form({ description: 'Mesa', type: 'expense', date: '2026-11-05', amount: '100', accountId: String(card), installments: '3', installmentStart: '4' }))).rejects.toThrow()
+    })
+
+    it('edita esta e as próximas parcelas levando só o que mudou', async () => {
+      const [{ id: card }] = await sql`INSERT INTO "financial_accounts" ("userId", "name", "kind", "closingDay", "dueDay") VALUES (${ALICE}, 'Cartão', 'credit_card', 10, 20) RETURNING "id"`
+      await actions.addTransaction(form({ description: 'Televisão', type: 'expense', date: '2026-11-05', amount: '100', accountId: String(card), installments: '3' }))
+      const rows = () => sql`SELECT "id", "description", "amountCents", "date" FROM "transactions" WHERE "accountId" = ${card} ORDER BY "installmentNumber"`
+      const [first, second] = await rows()
+      const edit = (row: typeof second, fields: Record<string, string>) =>
+        actions.updateTransaction(row.id, form({ description: row.description, type: 'expense', date: row.date, amount: (row.amountCents / 100).toFixed(2), accountId: String(card), ...fields }))
+
+      await edit(second, { description: 'TV da sala', date: '2026-12-08', scope: 'following' })
+      expect((await rows()).map(row => [row.description, row.amountCents, row.date])).toEqual([
+        ['Televisão', 3334, '2026-11-05'],
+        ['TV da sala', 3333, '2026-12-08'],
+        ['TV da sala', 3333, '2027-01-05'],
+      ])
+
+      await edit({ ...second, description: 'TV da sala' }, { amount: '40', scope: 'following' })
+      await edit(first, { amount: '50', scope: 'this' })
+      expect((await rows()).map(row => row.amountCents)).toEqual([5000, 4000, 4000])
+
+      await expect(edit(first, { recurring: 'true', recurrenceEnd: '2027-06-01' })).rejects.toThrow('recorrente')
+    })
+
+    it('guarda o limite só em cartões e recusa limite zerado', async () => {
+      const limitOf = async (name: string) => (await sql`SELECT "creditLimitCents" FROM "financial_accounts" WHERE "userId" = ${ALICE} AND "name" = ${name}`)[0].creditLimitCents
+      await actions.addAccount(form({ name: 'Nubank', kind: 'credit_card', closingDay: '10', dueDay: '20', creditLimit: '5000,50' }))
+      expect(await limitOf('Nubank')).toBe(500050)
+      await actions.addAccount(form({ name: 'Inter', kind: 'credit_card', closingDay: '10', dueDay: '20', creditLimit: '' }))
+      expect(await limitOf('Inter')).toBeNull()
+      await actions.addAccount(form({ name: 'Corrente', kind: 'checking', creditLimit: '1000' }))
+      expect(await limitOf('Corrente')).toBeNull()
+      await expect(actions.addAccount(form({ name: 'Zerado', kind: 'credit_card', closingDay: '10', dueDay: '20', creditLimit: '0' }))).rejects.toThrow()
+    })
   })
 
   describe('metas ligadas a contas e aparência do cartão', () => {

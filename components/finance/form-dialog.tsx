@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { getInstallmentAmounts } from "@/lib/accounts";
 import { Account, Category, Field, Quote, brl, categoryIconOptions, categoryIcons, investmentOptions, isFixedIncomeType, isStreamingCategory, streamingServiceImages, streamingServices } from "@/components/finance/shared";
 
 /** Escolha da conta que a meta acompanha. Cartões ficam de fora porque o saldo deles é dívida. */
@@ -53,6 +54,9 @@ export function FormDialog({
   const [accountId, setAccountId] = useState("none");
   const [goalAccountId, setGoalAccountId] = useState("none");
   const [installments, setInstallments] = useState("1");
+  const [installmentStart, setInstallmentStart] = useState("1");
+  const [amountMode, setAmountMode] = useState<"total" | "installment">("total");
+  const [amount, setAmount] = useState("");
   const [transactionType, setTransactionType] = useState("expense");
   const [transactionCategoryId, setTransactionCategoryId] = useState("none");
   const [holdingType, setHoldingType] = useState<keyof typeof investmentOptions>(
@@ -83,6 +87,7 @@ export function FormDialog({
     transactionType === "expense" &&
     accounts.some((account) => String(account.id) === accountId && account.kind === "credit_card");
   const isInstallment = canSplit && Number(installments) > 1;
+  const installmentPreview = isInstallment ? previewInstallments(amount, Number(installments), Number(installmentStart), amountMode) : null;
   const meta = {
     transaction: ["Novo lançamento", "Registre uma receita ou despesa."],
     category: ["Nova categoria", "Personalize a organização dos seus gastos."],
@@ -110,8 +115,18 @@ export function FormDialog({
       }
     });
   }
+  // A janela guarda o estado entre as aberturas: sem isto, um lançamento novo herdaria o valor e as parcelas do anterior.
+  function changeOpen(next: boolean) {
+    if (next) {
+      setAmount("");
+      setInstallments("1");
+      setInstallmentStart("1");
+      setAmountMode("total");
+    }
+    setOpen(next);
+  }
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger
         render={
           <Button
@@ -179,7 +194,7 @@ export function FormDialog({
                     }}
                   >
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue>{(value: string) => (value === "income" ? "Receita" : "Despesa")}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
@@ -189,12 +204,14 @@ export function FormDialog({
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Valor">
+                <Field label={isInstallment ? (amountMode === "installment" ? "Valor da parcela" : "Valor total") : "Valor"}>
                   <Input
                     name="amount"
                     type="number"
                     min="0.01"
                     step="0.01"
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value)}
                     required
                   />
                 </Field>
@@ -207,7 +224,7 @@ export function FormDialog({
                     onValueChange={(value) => setTransactionCategoryId(String(value))}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Selecionar" />
+                      <SelectValue>{(value: string) => categories.find((category) => String(category.id) === value)?.name ?? "Sem categoria"}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
@@ -274,9 +291,37 @@ export function FormDialog({
                 </div>
               )}
               {isInstallment && (
-                <p className="text-xs text-muted-foreground">
-                  Informe em Valor o total da compra. Ele será dividido em {installments} parcelas mensais a partir da primeira data.
-                </p>
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="O valor informado é">
+                      <Select name="amountMode" value={amountMode} onValueChange={(value) => setAmountMode(value === "installment" ? "installment" : "total")}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue>{(value: string) => (value === "installment" ? "De cada parcela" : "O total da compra")}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value="total">O total da compra</SelectItem>
+                            <SelectItem value="installment">De cada parcela</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Começar da parcela">
+                      <Input
+                        name="installmentStart"
+                        type="number"
+                        min="1"
+                        max={installments}
+                        value={installmentStart}
+                        onChange={(event) => setInstallmentStart(event.target.value)}
+                        required
+                      />
+                    </Field>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {installmentPreview ?? `Para uma compra que você já está pagando, informe em qual parcela está. As anteriores não são lançadas.`}
+                  </p>
+                </>
               )}
               {!isInstallment && (
                 <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
@@ -590,4 +635,19 @@ export function FormDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/** Resumo do que será lançado, como "Serão lançadas 7 parcelas (4/10 a 10/10) de R$ 100,00, total de R$ 700,00." */
+function previewInstallments(amount: string, total: number, start: number, mode: "total" | "installment") {
+  const amountCents = Math.round(Number(amount) * 100);
+  if (!Number.isInteger(total) || !Number.isInteger(start) || start < 1 || start > total) return null;
+  const count = total - start + 1;
+  const amounts = amountCents > 0 ? getInstallmentAmounts(amountCents, total, start, mode === "installment") : [];
+  const sum = amounts.reduce((value, item) => value + item, 0);
+  const values = amounts.length
+    ? ` de ${amounts[0] === amounts.at(-1) ? "" : "cerca de "}${brl(amounts[0])}${count > 1 ? `, total de ${brl(sum)}` : ""}`
+    : "";
+  const when = "A primeira entra na fatura da data informada e as outras, uma por fatura.";
+  if (count === 1) return `Será lançada só a parcela ${total}/${total}${values}. Ela entra na fatura da data informada.`;
+  return `Serão lançadas ${count} parcelas (${start}/${total} a ${total}/${total})${values}. ${when}`;
 }

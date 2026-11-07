@@ -30,7 +30,7 @@ export const categories = pgTable('categories', {
 }, t => [index('categories_user_idx').on(t.userId), uniqueIndex('categories_user_name_type_idx').on(t.userId, t.name, t.type)])
 export const financialAccounts = pgTable('financial_accounts', {
   id: serial('id').primaryKey(), userId: text('userId').notNull().references(() => user.id, { onDelete: 'cascade' }), name: text('name').notNull(), kind: text('kind').notNull(),
-  initialBalanceCents: integer('initialBalanceCents').notNull().default(0), closingDay: integer('closingDay'), dueDay: integer('dueDay'), cardBrand: text('cardBrand'), cardColor: text('cardColor'), cardLastDigits: text('cardLastDigits'), createdAt: timestamp('createdAt', { withTimezone: true }).notNull().defaultNow(),
+  initialBalanceCents: integer('initialBalanceCents').notNull().default(0), closingDay: integer('closingDay'), dueDay: integer('dueDay'), cardBrand: text('cardBrand'), cardColor: text('cardColor'), cardLastDigits: text('cardLastDigits'), creditLimitCents: integer('creditLimitCents'), createdAt: timestamp('createdAt', { withTimezone: true }).notNull().defaultNow(),
 }, t => [uniqueIndex('financial_accounts_user_name_idx').on(t.userId, t.name)])
 export const transfers = pgTable('transfers', {
   id: serial('id').primaryKey(), userId: text('userId').notNull().references(() => user.id, { onDelete: 'cascade' }), fromAccountId: integer('fromAccountId').notNull().references(() => financialAccounts.id, { onDelete: 'cascade' }), toAccountId: integer('toAccountId').notNull().references(() => financialAccounts.id, { onDelete: 'cascade' }),

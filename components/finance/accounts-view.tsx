@@ -3,8 +3,8 @@
 import { useMemo, useState, useTransition } from "react";
 import { ArrowRightLeft, CreditCard, Landmark, Pencil, PiggyBank, Plus, Trash2, Wallet } from "lucide-react";
 import { addAccount, addTransfer, deleteAccount, deleteTransfer, updateAccount } from "@/app/actions/finance";
-import { CARD_BRANDS, CARD_COLORS, getAccountBalance, getCardColor, getCardInvoices, type InvoiceStatus } from "@/lib/accounts";
-import { CreditCardVisual } from "@/components/finance/credit-card";
+import { CARD_BRANDS, CARD_COLORS, INVOICE_STATUS_LABELS, getAccountBalance, getCardColor, getCardInvoices, getCardLimitUsed } from "@/lib/accounts";
+import { CardLimitBar, CreditCardVisual } from "@/components/finance/credit-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,13 +19,6 @@ const kinds = {
   savings: { label: "Poupança", icon: PiggyBank },
   cash: { label: "Dinheiro", icon: Wallet },
   credit_card: { label: "Cartão de crédito", icon: CreditCard },
-};
-const statusLabels: Record<InvoiceStatus, string> = {
-  paid: "Paga",
-  overdue: "Vencida",
-  closed: "Fechada",
-  open: "Aberta",
-  future: "Próxima",
 };
 const formatDate = (date: string) => new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR");
 const kindOf = (kind: string) => kinds[kind as keyof typeof kinds] ?? kinds.checking;
@@ -161,6 +154,17 @@ function AccountDialog({ account }: { account?: Account }) {
                 <Input name="dueDay" type="number" min="1" max="31" defaultValue={account?.dueDay ?? undefined} required />
               </Field>
               </div>
+              <Field label="Limite do cartão (opcional)">
+                <Input
+                  name="creditLimit"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  defaultValue={account?.creditLimitCents ? (account.creditLimitCents / 100).toFixed(2) : undefined}
+                  placeholder="0,00"
+                />
+                <p className="text-xs text-muted-foreground">Mostra quanto do limite as compras e parcelas já ocupam.</p>
+              </Field>
             </>
           )}
           <Field label={isCard ? "Dívida atual, fora dos lançamentos" : "Saldo inicial"}>
@@ -206,7 +210,7 @@ function AccountSelect({ name, label, accounts, defaultValue }: { name: string; 
   );
 }
 
-function TransferDialog({ accounts, currentDate, toAccountId, amountCents, label = "Nova transferência", description = "" }: {
+export function TransferDialog({ accounts, currentDate, toAccountId, amountCents, label = "Nova transferência", description = "" }: {
   accounts: Account[];
   currentDate: string;
   toAccountId?: number;
@@ -288,7 +292,7 @@ function CardInvoices({ card, accounts, transactions, transfers, currentDate }: 
             <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm">
               <span className="flex items-center gap-2">
                 <Badge variant={invoice.status === "overdue" ? "destructive" : invoice.status === "paid" ? "secondary" : "outline"}>
-                  {statusLabels[invoice.status]}
+                  {INVOICE_STATUS_LABELS[invoice.status]}
                 </Badge>
                 Vence em {formatDate(invoice.dueDate)}
               </span>
@@ -411,6 +415,13 @@ export function AccountsView({ accounts, transfers, transactions, currentDate }:
                       </Button>
                     </div>
                   </div>
+                  {account.creditLimitCents ? (
+                    <CardLimitBar
+                      className="px-1"
+                      usedCents={getCardLimitUsed(account, transactions, transfers, currentDate)}
+                      limitCents={account.creditLimitCents}
+                    />
+                  ) : null}
                 </div>
               );
             return (
