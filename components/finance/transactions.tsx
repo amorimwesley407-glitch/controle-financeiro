@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { decodeOfx, parseOfx } from "@/lib/ofx";
+import { BillPaidButton } from "@/components/finance/bills-card";
 import { Account, Category, Empty, Field, Tx, brl, categoryIcons, getStreamingServiceImage, isStreamingCategory, repairImportedText, streamingServiceImages, streamingServices, transactionIconStyles, transactionTypeLabel } from "@/components/finance/shared";
 
 export function EditTransactionDialog({
@@ -923,6 +924,7 @@ export function TransactionTable({
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end">
+                      {t.billStatus === "pending" && <BillPaidButton bill={t} compact />}
                       <EditTransactionDialog
                         transaction={t}
                         categories={categories}
