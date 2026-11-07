@@ -30,7 +30,7 @@ import { AccountMenu, Nav, NotificationMenu } from "@/components/finance/navigat
 
 type Props = {
   currentDate: string;
-  user: { name: string; email: string; image: string | null };
+  user: { name: string; email: string; image: string | null; twoFactorEnabled: boolean };
   transactions: Tx[];
   categories: Category[];
   goals: GoalType[];

@@ -1,4 +1,5 @@
 import { betterAuth } from 'better-auth'
+import { twoFactor } from 'better-auth/plugins'
 import { drizzleAdapter } from '@better-auth/drizzle-adapter'
 import { db } from '@/lib/db'
 import * as schema from '@/lib/db/schema'
@@ -88,5 +89,7 @@ export const auth = betterAuth({
     },
   },
   session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
+  // Verificação em duas etapas com app autenticador. O nome aparece no app (Google Authenticator, Authy…).
+  plugins: [twoFactor({ issuer: 'Clareza' })],
   advanced: process.env.NODE_ENV === 'development' ? { defaultCookieAttributes: { sameSite: 'lax', secure: false } } : undefined,
 })

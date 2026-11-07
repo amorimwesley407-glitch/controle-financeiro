@@ -11,7 +11,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
-function Shell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+/** Moldura das telas de conta fora do app (recuperar senha, verificação em duas etapas). */
+export function Shell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return (
     <main className="relative flex min-h-svh items-center justify-center bg-background p-4">
       <div className="absolute right-4 top-4"><ThemeToggle /></div>

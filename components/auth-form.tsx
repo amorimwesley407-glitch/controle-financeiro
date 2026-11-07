@@ -29,6 +29,8 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
         ? await authClient.signUp.email({ name: name.trim(), email: email.trim(), password })
         : await authClient.signIn.email({ email: email.trim(), password })
       if (result.error) { setError(result.error.message || 'Não foi possível continuar.'); return }
+      // Com a verificação em duas etapas ligada, a senha certa ainda não abre a sessão: falta o código do app.
+      if (result.data && 'twoFactorRedirect' in result.data && result.data.twoFactorRedirect) { router.replace('/two-factor'); return }
       router.replace('/')
       router.refresh()
     } catch { setError('Falha de conexão. Tente novamente.') }
