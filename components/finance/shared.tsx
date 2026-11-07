@@ -38,6 +38,7 @@ export type Account = {
   cardBrand?: string | null;
   cardColor?: string | null;
   cardLastDigits?: string | null;
+  creditLimitCents?: number | null;
 };
 
 export type Transfer = {
@@ -288,37 +289,42 @@ export function Field({
   );
 }
 
-// Escolha de ocultar cada valor, lembrada neste navegador. A memória garante que o botão
+// Preferências lembradas neste navegador, como ocultar um valor. A memória garante que o botão
 // funcione mesmo quando o localStorage não está disponível (por exemplo, em aba anônima).
-const hiddenMemory = new Map<string, boolean>();
-const hiddenListeners = new Set<() => void>();
-const hiddenStorageKey = (key: string) => `clareza:ocultar:${key}`;
+const flagMemory = new Map<string, boolean>();
+const flagListeners = new Set<() => void>();
 
-function readHidden(key: string) {
-  const remembered = hiddenMemory.get(key);
+function readFlag(storageKey: string) {
+  const remembered = flagMemory.get(storageKey);
   if (remembered !== undefined) return remembered;
   try {
-    return localStorage.getItem(hiddenStorageKey(key)) === "1";
+    return localStorage.getItem(storageKey) === "1";
   } catch {
     return false;
   }
 }
 
-function subscribeHidden(listener: () => void) {
-  hiddenListeners.add(listener);
-  return () => hiddenListeners.delete(listener);
+function subscribeFlags(listener: () => void) {
+  flagListeners.add(listener);
+  return () => flagListeners.delete(listener);
+}
+
+/** Liga/desliga guardado no navegador. No servidor e na primeira renderização vale sempre falso. */
+export function useStoredFlag(storageKey: string) {
+  const value = useSyncExternalStore(subscribeFlags, () => readFlag(storageKey), () => false);
+  function set(next: boolean) {
+    flagMemory.set(storageKey, next);
+    try {
+      localStorage.setItem(storageKey, next ? "1" : "0");
+    } catch {}
+    flagListeners.forEach((listener) => listener());
+  }
+  return [value, set] as const;
 }
 
 export function useHiddenValue(key: string) {
-  const hidden = useSyncExternalStore(subscribeHidden, () => readHidden(key), () => false);
-  function toggle() {
-    hiddenMemory.set(key, !hidden);
-    try {
-      localStorage.setItem(hiddenStorageKey(key), hidden ? "0" : "1");
-    } catch {}
-    hiddenListeners.forEach((listener) => listener());
-  }
-  return [hidden, toggle] as const;
+  const [hidden, setHidden] = useStoredFlag(`clareza:ocultar:${key}`);
+  return [hidden, () => setHidden(!hidden)] as const;
 }
 
 export function HideValueButton({ hidden, onToggle, className, all = false }: { hidden: boolean; onToggle: () => void; className?: string; all?: boolean }) {

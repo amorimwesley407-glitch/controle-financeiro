@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addMonthsToDate, applyGoalBalances, getAccountBalance, getCardColor, getCardInvoices, getInvoiceClosingDate, getInstallmentDates, getInvoiceDueDate, splitInstallments } from './accounts'
+import { addMonthsToDate, applyGoalBalances, daysBetween, getAccountBalance, getCardColor, getCardDueAlerts, getCardInvoices, getCardLimitUsed, getCurrentInvoice, getInvoiceClosingDate, getInstallmentAmounts, getInstallmentDates, getInvoiceDueDate, getPurchaseDueDate, splitInstallments } from './accounts'
 
 const expense = (date: string, amountCents: number, accountId = 1) => ({ type: 'expense', amountCents, date, accountId })
 const income = (date: string, amountCents: number, accountId = 1) => ({ type: 'income', amountCents, date, accountId })
@@ -23,6 +23,26 @@ describe('splitInstallments', () => {
   })
   it('funciona com parcela única', () => {
     expect(splitInstallments(999, 1)).toEqual([999])
+  })
+})
+
+describe('getInstallmentAmounts', () => {
+  it('com o total da compra, divide pelo total de parcelas e lança só as que faltam', () => {
+    expect(getInstallmentAmounts(100000, 10, 4, false)).toEqual(Array(7).fill(10000))
+    expect(getInstallmentAmounts(10000, 3, 1, false)).toEqual([3334, 3333, 3333])
+    expect(getInstallmentAmounts(10000, 3, 2, false)).toEqual([3333, 3333])
+  })
+  it('com o valor de cada parcela, repete o valor nas que faltam', () => {
+    expect(getInstallmentAmounts(15000, 10, 4, true)).toEqual(Array(7).fill(15000))
+    expect(getInstallmentAmounts(15000, 10, 10, true)).toEqual([15000])
+  })
+})
+
+describe('daysBetween', () => {
+  it('conta os dias, inclusive virando o mês e para trás', () => {
+    expect(daysBetween('2026-10-30', '2026-11-02')).toBe(3)
+    expect(daysBetween('2026-11-02', '2026-11-02')).toBe(0)
+    expect(daysBetween('2026-11-02', '2026-10-30')).toBe(-3)
   })
 })
 
@@ -86,6 +106,34 @@ describe('getCardInvoices', () => {
   })
   it('ignora lançamentos de outras contas', () => {
     expect(getCardInvoices(card(), [expense('2026-08-05', 1000, 2)], [], '2026-10-30')).toEqual([])
+  })
+})
+
+describe('fatura atual, avisos e limite', () => {
+  const txs = [expense('2026-09-05', 2000), expense('2026-10-05', 3000), expense('2026-10-20', 4000), expense('2026-11-20', 5000)]
+  it('vencimento da compra segue a fatura em que ela cai', () => {
+    expect(getPurchaseDueDate('2026-10-10', 10, 20)).toBe('2026-10-20')
+    expect(getPurchaseDueDate('2026-10-11', 10, 20)).toBe('2026-11-20')
+    expect(getPurchaseDueDate('2026-10-26', 25, 5)).toBe('2026-12-05')
+  })
+  it('a fatura atual é a mais antiga fechada sem pagamento, ou então a aberta', () => {
+    const invoices = getCardInvoices(card(), txs, [], '2026-10-15')
+    expect(getCurrentInvoice(invoices)?.closingDate).toBe('2026-09-10')
+    const paid = getCardInvoices(card(), txs, [payment('2026-10-12', 5000)], '2026-10-15')
+    expect(getCurrentInvoice(paid)?.closingDate).toBe('2026-11-10')
+    expect(getCurrentInvoice(getCardInvoices(card(), [expense('2026-12-20', 100)], [], '2026-10-15'))).toBeUndefined()
+  })
+  it('avisa das faturas vencidas e das que vencem em até 3 dias, mas não das pagas', () => {
+    const alerts = (date: string, transfers = [] as ReturnType<typeof payment>[]) =>
+      getCardDueAlerts([card()], txs, transfers, date).map(item => [item.dueDate, item.remainingCents, item.daysLeft])
+    expect(alerts('2026-10-16')).toEqual([['2026-09-20', 2000, -26]])
+    expect(alerts('2026-10-17')).toEqual([['2026-09-20', 2000, -27], ['2026-10-20', 3000, 3]])
+    expect(alerts('2026-10-17', [payment('2026-10-17', 5000)])).toEqual([])
+  })
+  it('o limite usado conta as parcelas futuras e só os pagamentos já feitos', () => {
+    expect(getCardLimitUsed(card(), txs, [], '2026-10-15')).toBe(14000)
+    expect(getCardLimitUsed(card({ initialBalanceCents: -1000 }), [...txs, income('2026-10-06', 500)], [payment('2026-10-12', 5000), payment('2026-12-01', 9000)], '2026-10-15')).toBe(9500)
+    expect(getCardLimitUsed(card(), [expense('2026-10-05', 100, 2)], [payment('2026-10-12', 5000)], '2026-10-15')).toBe(0)
   })
 })
 

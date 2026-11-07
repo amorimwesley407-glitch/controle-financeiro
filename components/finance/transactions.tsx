@@ -41,6 +41,7 @@ export function EditTransactionDialog({
     (category) => String(category.id) === categoryId,
   );
   const transactionIsStreaming = isStreamingCategory(selectedCategory);
+  const isInstallment = Boolean(transaction.installmentGroup);
   const currentStreamingService = streamingServices.includes(
     transaction.description as (typeof streamingServices)[number],
   )
@@ -136,7 +137,7 @@ export function EditTransactionDialog({
                 }}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue>{(value: string) => (value === "income" ? "Receita" : "Despesa")}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
@@ -165,7 +166,7 @@ export function EditTransactionDialog({
                 onValueChange={(value) => setCategoryId(String(value))}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue>{(value: string) => categories.find((category) => String(category.id) === value)?.name ?? "Sem categoria"}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
@@ -242,24 +243,44 @@ export function EditTransactionDialog({
               Remover imagem própria e voltar a usar a imagem da categoria
             </label>
           )}
-          <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
-            <input
-              name="recurring"
-              type="checkbox"
-              value="true"
-              checked={repeatFromHere}
-              onChange={(event) => setRepeatFromHere(event.target.checked)}
-            />
-            <span>
-              <span className="block font-medium">
-                Repetir mensalmente a partir daqui
-              </span>
+          {isInstallment && transaction.installmentNumber !== transaction.installmentTotal && (
+            <fieldset className="flex flex-col gap-2 rounded-lg border p-3 text-sm">
+              <legend className="px-1 font-medium">
+                Parcela {transaction.installmentNumber} de {transaction.installmentTotal}. Aplicar as mudanças a:
+              </legend>
+              <label className="flex items-center gap-2">
+                <input type="radio" name="scope" value="this" defaultChecked />
+                Só esta parcela
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="radio" name="scope" value="following" />
+                Esta e as próximas parcelas
+              </label>
               <span className="text-xs text-muted-foreground">
-                Cria novas ocorrências sem alterar as anteriores.
+                Nas próximas, muda só o que você alterou aqui. A data e a imagem valem só para esta.
               </span>
-            </span>
-          </label>
-          {repeatFromHere && (
+            </fieldset>
+          )}
+          {!isInstallment && (
+            <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
+              <input
+                name="recurring"
+                type="checkbox"
+                value="true"
+                checked={repeatFromHere}
+                onChange={(event) => setRepeatFromHere(event.target.checked)}
+              />
+              <span>
+                <span className="block font-medium">
+                  Repetir mensalmente a partir daqui
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  Cria novas ocorrências sem alterar as anteriores.
+                </span>
+              </span>
+            </label>
+          )}
+          {repeatFromHere && !isInstallment && (
             <Field label="Repetir até">
               <Input
                 name="recurrenceEnd"
@@ -757,7 +778,7 @@ export function TransactionTable({
             <Button variant="outline" onClick={() => setInstallmentToRemove(null)}>Cancelar</Button>
             <Button variant="outline" onClick={() => installmentToRemove && removeOne(installmentToRemove)}>Só esta parcela</Button>
             <Button variant="destructive" onClick={() => installmentToRemove && removeInstallments(installmentToRemove)}>
-              Todas as {installmentToRemove?.installmentTotal} parcelas
+              Todas as parcelas da compra
             </Button>
           </div>
         </DialogContent>

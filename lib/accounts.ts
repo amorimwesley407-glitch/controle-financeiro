@@ -20,6 +20,19 @@ export function splitInstallments(totalCents: number, count: number) {
   return Array.from({ length: count }, (_, index) => base + (index < remainder ? 1 : 0))
 }
 
+/**
+ * Valores das parcelas lançadas, da parcela `start` até a `total`.
+ * Com `perInstallment`, o valor informado já é o de cada parcela. Senão, é o total da compra, dividido em `total` partes.
+ */
+export function getInstallmentAmounts(amountCents: number, total: number, start: number, perInstallment: boolean) {
+  const count = total - start + 1
+  return perInstallment ? Array.from({ length: count }, () => amountCents) : splitInstallments(amountCents, total).slice(start - 1)
+}
+
+/** Dias de `from` até `to`. Negativo quando `to` já passou. */
+export const daysBetween = (from: string, to: string) =>
+  Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000)
+
 /** Saldo em `currentDate`. Lançamentos e transferências futuros ainda não contam. Em cartões, negativo é dívida. */
 export function getAccountBalance(account: BalanceAccount, transactions: AccountTx[], transfers: AccountTransfer[], currentDate: string) {
   let balance = account.initialBalanceCents
@@ -71,6 +84,7 @@ export function getInvoiceDueDate(closingDate: string, closingDay: number, dueDa
 }
 
 export type InvoiceStatus = 'paid' | 'overdue' | 'closed' | 'open' | 'future'
+export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = { paid: 'Paga', overdue: 'Vencida', closed: 'Fechada', open: 'Aberta', future: 'Próxima' }
 
 /**
  * Faturas do cartão, da mais antiga para a mais recente.
@@ -108,7 +122,44 @@ export function getCardInvoices<T extends AccountTx>(card: CardAccount, transact
   })
 }
 
-export const CARD_BRANDS = { visa: 'Visa', mastercard: 'Mastercard', elo: 'Elo', amex: 'American Express', hipercard: 'Hipercard' } as const
+/** Vencimento da fatura em que cai uma compra feita em `date`. */
+export const getPurchaseDueDate = (date: string, closingDay: number, dueDay: number) =>
+  getInvoiceDueDate(getInvoiceClosingDate(date, closingDay), closingDay, dueDay)
+
+/** Fatura que pede atenção agora: a mais antiga que já fechou e não foi paga, ou então a aberta. */
+export function getCurrentInvoice<I extends { status: InvoiceStatus }>(invoices: I[]) {
+  return invoices.find(invoice => invoice.status === 'overdue' || invoice.status === 'closed') ?? invoices.find(invoice => invoice.status === 'open')
+}
+
+/** Faturas com valor a pagar que já venceram ou vencem em até `withinDays` dias. */
+export function getCardDueAlerts<C extends CardAccount, T extends AccountTx>(cards: C[], transactions: T[], transfers: AccountTransfer[], currentDate: string, withinDays = 3) {
+  return cards.flatMap(card =>
+    getCardInvoices(card, transactions, transfers, currentDate)
+      .filter(invoice => invoice.status !== 'future' && invoice.remainingCents > 0 && daysBetween(currentDate, invoice.dueDate) <= withinDays)
+      .map(invoice => ({ card, dueDate: invoice.dueDate, remainingCents: invoice.remainingCents, daysLeft: daysBetween(currentDate, invoice.dueDate) })),
+  )
+}
+
+/**
+ * Quanto do limite está ocupado. Como no banco, a compra parcelada ocupa o valor inteiro desde o início,
+ * então entram todas as compras do cartão, inclusive as parcelas futuras. Estornos e pagamentos já feitos liberam o limite.
+ */
+export function getCardLimitUsed(card: BalanceAccount, transactions: AccountTx[], transfers: AccountTransfer[], currentDate: string) {
+  let used = -card.initialBalanceCents
+  for (const item of transactions) {
+    if (item.accountId !== card.id) continue
+    if (item.type === 'expense') used += item.amountCents
+    else if (item.type === 'income') used -= item.amountCents
+  }
+  for (const item of transfers) {
+    if (item.date > currentDate) continue
+    if (item.toAccountId === card.id) used -= item.amountCents
+    if (item.fromAccountId === card.id) used += item.amountCents
+  }
+  return Math.max(used, 0)
+}
+
+export const CARD_BRANDS ={ visa: 'Visa', mastercard: 'Mastercard', elo: 'Elo', amex: 'American Express', hipercard: 'Hipercard' } as const
 export const CARD_COLORS = {
   nubank: { label: 'Nubank', from: '#9A1FE0', to: '#5B0A99', text: '#FFFFFF', match: /^nu\s?ban/ },
   inter: { label: 'Inter', from: '#FF8A00', to: '#E85D00', text: '#FFFFFF', match: /\binter\b/ },

@@ -1,4 +1,6 @@
 import { CARD_COLORS, getCardColor } from "@/lib/accounts";
+import { Progress } from "@/components/ui/progress";
+import { brl } from "@/components/finance/shared";
 
 function BrandMark({ brand, color }: { brand?: string | null; color: string }) {
   if (brand === "mastercard")
@@ -44,6 +46,30 @@ export function CreditCardVisual({ name, brand, color, lastDigits }: {
         <p className="min-w-0 whitespace-nowrap font-mono text-xs tracking-wider">•••• •••• •••• {lastDigits || "••••"}</p>
         <BrandMark brand={brand} color={style.text} />
       </div>
+    </div>
+  );
+}
+
+/** Barra do limite usado. Acima do limite, a barra fica cheia e vermelha. */
+export function CardLimitBar({ usedCents, limitCents, className }: { usedCents: number; limitCents: number; className?: string }) {
+  const percentage = Math.round((usedCents / limitCents) * 100);
+  const over = usedCents > limitCents;
+  return (
+    <div className={`flex flex-col gap-1.5 text-xs ${className ?? ""}`}>
+      <div className="flex justify-between gap-2">
+        <span className="text-muted-foreground">Limite usado</span>
+        <span className="font-mono">
+          {brl(usedCents)} de {brl(limitCents)}
+        </span>
+      </div>
+      <Progress
+        value={Math.min(percentage, 100)}
+        aria-label="Limite usado"
+        className={over ? "[&_[data-slot=progress-indicator]]:bg-red-500" : percentage >= 80 ? "[&_[data-slot=progress-indicator]]:bg-amber-500" : undefined}
+      />
+      <span className={over ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}>
+        {over ? `Acima do limite em ${brl(usedCents - limitCents)}` : `Disponível: ${brl(limitCents - usedCents)}`}
+      </span>
     </div>
   );
 }

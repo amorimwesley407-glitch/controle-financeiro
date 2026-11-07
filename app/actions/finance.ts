@@ -2,11 +2,11 @@
 
 import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
-import { and, between, desc, eq, isNotNull, or } from 'drizzle-orm'
+import { and, between, desc, eq, gt, isNotNull, or } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { budgets, categories, financialAccounts, goals, holdings, transactions, transfers, user as users } from '@/lib/db/schema'
-import { CARD_BRANDS, CARD_COLORS, getInstallmentDates, splitInstallments } from '@/lib/accounts'
+import { CARD_BRANDS, CARD_COLORS, getInstallmentAmounts, getInstallmentDates } from '@/lib/accounts'
 import { findMissingCategories, matchCategory, MAX_NEW_CATEGORIES_PER_IMPORT, skipExistingTransactions } from '@/lib/import'
 import { findLearnedCategory, findSuggestedCategory } from '@/lib/categorize'
 import { parseMoneyToCents } from '@/lib/money'
@@ -69,10 +69,13 @@ export async function addTransaction(form: FormData) {
   if (installments > 1) {
     if (parsed.type !== 'expense' || account?.kind !== 'credit_card' || account.closingDay === null) throw new Error('Parcelas só valem para despesas em um cartão de crédito')
     if (recurring) throw new Error('Um lançamento não pode ser parcelado e recorrente ao mesmo tempo')
-    if (parsed.amount < installments) throw new Error('O valor é pequeno demais para esse número de parcelas')
+    // Compra que já estava sendo paga: lança só as parcelas que faltam, a partir da atual, com a numeração certa.
+    const start = z.coerce.number().int().min(1).max(installments, 'A parcela inicial não pode passar do total de parcelas').parse(form.get('installmentStart') || 1)
+    const amounts = getInstallmentAmounts(parsed.amount, installments, start, form.get('amountMode') === 'installment')
+    if (amounts.some(amountCents => amountCents < 1)) throw new Error('O valor é pequeno demais para esse número de parcelas')
     const installmentGroup = crypto.randomUUID()
-    const dates = getInstallmentDates(parsed.date, installments, account.closingDay)
-    await db.insert(transactions).values(splitInstallments(parsed.amount, installments).map((amountCents, index) => ({ userId, description: parsed.description, type: parsed.type, date: dates[index], amountCents, categoryId: parsed.categoryId, accountId, notes, installmentGroup, installmentNumber: index + 1, installmentTotal: installments })))
+    const dates = getInstallmentDates(parsed.date, amounts.length, account.closingDay)
+    await db.insert(transactions).values(amounts.map((amountCents, index) => ({ userId, description: parsed.description, type: parsed.type, date: dates[index], amountCents, categoryId: parsed.categoryId, accountId, notes, installmentGroup, installmentNumber: start + index, installmentTotal: installments })))
     revalidatePath('/')
     return
   }
@@ -80,6 +83,18 @@ export async function addTransaction(form: FormData) {
   do {const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(recurrenceEnd&&occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId:parsed.categoryId,accountId,notes,recurring});offset++;if(offset>120)throw new Error('O período recorrente deve ter no máximo 120 meses')}while(recurrenceEnd)
   await db.insert(transactions).values(values)
   revalidatePath('/')
+}
+/**
+ * Leva às parcelas seguintes da mesma compra só o que mudou nesta. Comparar evita, por exemplo,
+ * gravar 33,34 em todas ao corrigir só a descrição de uma compra de 100,00 em 3 vezes.
+ * A data e a imagem continuam valendo só para a parcela editada.
+ */
+type InstallmentFields = Pick<typeof transactions.$inferSelect, 'description' | 'type' | 'amountCents' | 'categoryId' | 'accountId' | 'notes'>
+async function updateFollowingInstallments(before: typeof transactions.$inferSelect, after: InstallmentFields, userId: string) {
+  if (!before.installmentGroup || !before.installmentNumber) return
+  const changes = Object.fromEntries((Object.keys(after) as (keyof InstallmentFields)[]).filter(key => after[key] !== before[key]).map(key => [key, after[key]]))
+  if (!Object.keys(changes).length) return
+  await db.update(transactions).set(changes).where(and(eq(transactions.userId, userId), eq(transactions.installmentGroup, before.installmentGroup), gt(transactions.installmentNumber, before.installmentNumber)))
 }
 /** Conta escolhida no formulário, conferindo o dono. Vazio ou "none" significa sem conta. */
 async function getOwnedAccount(value: FormDataEntryValue | null, userId: string) {
@@ -96,6 +111,7 @@ export async function updateTransaction(id: number, form: FormData) {
   if (!existing[0]) throw new Error('Transação não encontrada')
   const parsed = z.object({ description: z.string().trim().min(2).max(80), type: z.enum(['income','expense']), date, amount: money, categoryId: z.coerce.number().int().positive().optional() }).parse({ description: form.get('description'), type: form.get('type'), date: form.get('date'), amount: form.get('amount'), categoryId: form.get('categoryId')==='none'?undefined:form.get('categoryId')||undefined })
   const recurring = form.get('recurring') === 'true'
+  if (recurring && existing[0].installmentGroup) throw new Error('Uma parcela não pode virar um lançamento recorrente')
   const recurrenceEnd = recurring ? date.parse(form.get('recurrenceEnd')) : null
   if (recurrenceEnd && recurrenceEnd <= parsed.date) throw new Error('A data final deve ser posterior à data desta transação')
   let categoryId: number|null = parsed.categoryId ?? null
@@ -109,6 +125,7 @@ export async function updateTransaction(id: number, form: FormData) {
   const removeImage = form.get('removeImage') === 'true'
   await db.update(transactions).set({ description: parsed.description, type: parsed.type, date: parsed.date, amountCents: parsed.amount, categoryId, accountId, notes, recurring, imagePath: newImage??(removeImage?null:existing[0].imagePath) }).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId)))
   if ((newImage || removeImage) && existing[0].imagePath) await removeTransactionImage(existing[0].imagePath,userId)
+  if (form.get('scope') === 'following') await updateFollowingInstallments(existing[0], { description: parsed.description, type: parsed.type, amountCents: parsed.amount, categoryId, accountId, notes }, userId)
   if(recurrenceEnd){const values=[];const [year,monthIndex,day]=parsed.date.split('-').map(Number);for(let offset=1;offset<=120;offset++){const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId,accountId,notes,recurring:true})}if(values.length)await db.insert(transactions).values(values)}
   revalidatePath('/')
 }
@@ -131,10 +148,11 @@ function parseCardStyle(form: FormData) {
 }
 function parseAccountForm(form: FormData) {
   const parsed = z.object({ name: z.string().trim().min(2).max(40), kind: z.enum(['checking', 'savings', 'cash', 'credit_card']), initialBalance: z.preprocess(value => parseMoneyToCents(value || 0), z.number().int().safe()) }).parse({ name: form.get('name'), kind: form.get('kind'), initialBalance: form.get('initialBalance') })
-  if (parsed.kind !== 'credit_card') return { name: parsed.name, kind: parsed.kind, initialBalanceCents: parsed.initialBalance, closingDay: null, dueDay: null, cardBrand: null, cardColor: null, cardLastDigits: null }
+  if (parsed.kind !== 'credit_card') return { name: parsed.name, kind: parsed.kind, initialBalanceCents: parsed.initialBalance, closingDay: null, dueDay: null, cardBrand: null, cardColor: null, cardLastDigits: null, creditLimitCents: null }
   const day = z.coerce.number().int().min(1).max(31)
+  const creditLimitCents = z.preprocess(value => (value ? parseMoneyToCents(value) : null), z.number({ error: 'Informe um limite válido' }).int().safe().positive('O limite deve ser maior que zero').nullable()).parse(textValue(form.get('creditLimit')))
   // No cartão o formulário pede a dívida já existente, que entra no saldo como valor negativo.
-  return { name: parsed.name, kind: parsed.kind, initialBalanceCents: -Math.abs(parsed.initialBalance), closingDay: day.parse(form.get('closingDay')), dueDay: day.parse(form.get('dueDay')), ...parseCardStyle(form) }
+  return { name: parsed.name, kind: parsed.kind, initialBalanceCents: -Math.abs(parsed.initialBalance), closingDay: day.parse(form.get('closingDay')), dueDay: day.parse(form.get('dueDay')), creditLimitCents, ...parseCardStyle(form) }
 }
 export async function addAccount(form: FormData) {
   const userId = await getUserId()

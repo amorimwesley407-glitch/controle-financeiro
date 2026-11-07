@@ -16,6 +16,7 @@ export function DashboardView({
   flow,
   byCategory,
   holdings,
+  children,
 }: {
   income: number;
   expense: number;
@@ -24,6 +25,8 @@ export function DashboardView({
   flow: { month: string; receitas: number; despesas: number; saldo: number }[];
   byCategory: { name: string; value: number; fill: string }[];
   holdings: Holding[];
+  /** Aparece entre os indicadores e os gráficos. */
+  children?: React.ReactNode;
 }) {
   const current = flow.at(-1) ?? {
     receitas: 0,
@@ -174,6 +177,7 @@ export function DashboardView({
           icon={Target}
         />
       </section>
+      {children}
       <section className="grid gap-6 xl:grid-cols-3">
         <Card className="xl:col-span-2">
           <CardHeader className="flex-row items-start justify-between">

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { getBudgetAlerts } from "@/lib/finance";
+import { getCardDueAlerts } from "@/lib/accounts";
 import { Bell, CreditCard, LogOut, ReceiptText, Settings2, Target, TriangleAlert, UserRound } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -9,20 +10,25 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { AnimatedList } from "@/components/ui/animated-list";
-import { Budget, Category, Tx, brl } from "@/components/finance/shared";
+import { Account, Budget, Category, Transfer, Tx, brl } from "@/components/finance/shared";
 
 export function NotificationMenu({
   transactions,
   budgets,
   categories,
+  cards,
+  transfers,
   currentDate,
 }: {
   transactions: Tx[];
   budgets: Budget[];
   categories: Category[];
+  cards: Account[];
+  transfers: Transfer[];
   currentDate: string;
 }) {
   const [open, setOpen] = useState(false);
+  const dueAlerts = getCardDueAlerts(cards, transactions, transfers, currentDate);
   const alerts = getBudgetAlerts(
     transactions,
     budgets,
@@ -48,7 +54,7 @@ export function NotificationMenu({
         (!transaction.categoryId || !budgetCategoryIds.has(transaction.categoryId)),
     )
     .slice(0, 5);
-  const notificationCount = alerts.length + highExpenses.length;
+  const notificationCount = dueAlerts.length + alerts.length + highExpenses.length;
   return (
     <div className="relative z-50">
       <Button
@@ -77,13 +83,34 @@ export function NotificationMenu({
             <div className="flex items-center justify-between px-2 py-2">
               <div>
                 <p className="text-sm font-semibold">Notificações</p>
-                <p className="text-xs text-muted-foreground">Alertas dos seus orçamentos</p>
+                <p className="text-xs text-muted-foreground">Faturas, orçamentos e despesas altas</p>
               </div>
               {notificationCount > 0 && <Badge variant="secondary">{notificationCount}</Badge>}
             </div>
             <Separator className="my-1" />
             {notificationCount ? (
               <AnimatedList className="max-h-80 overflow-y-auto">
+                {dueAlerts.map((alert) => (
+                  <div key={`due-${alert.card.id}-${alert.dueDate}`} className="flex gap-3 rounded-lg p-2.5 hover:bg-muted/60">
+                    <span className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${alert.daysLeft < 0 ? "bg-rose-500/10 text-rose-400" : "bg-amber-500/10 text-amber-400"}`}>
+                      <CreditCard className="size-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex justify-between gap-3 text-sm">
+                        <span className="truncate font-medium">Fatura {alert.card.name}</span>
+                        <span className="font-mono text-xs font-semibold">{brl(alert.remainingCents)}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {alert.daysLeft < 0
+                          ? `Venceu há ${-alert.daysLeft} ${alert.daysLeft === -1 ? "dia" : "dias"} e ainda não foi paga.`
+                          : alert.daysLeft === 0
+                            ? "Vence hoje."
+                            : `Vence em ${alert.daysLeft} ${alert.daysLeft === 1 ? "dia" : "dias"}.`}{" "}
+                        Registre o pagamento em Contas e cartões.
+                      </p>
+                    </div>
+                  </div>
+                ))}
                 {alerts.map((alert) => (
                   <div key={alert.id} className="flex gap-3 rounded-lg p-2.5 hover:bg-muted/60">
                     <span className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${alert.percentage >= 100 ? "bg-rose-500/10 text-rose-400" : "bg-amber-500/10 text-amber-400"}`}>
@@ -120,7 +147,7 @@ export function NotificationMenu({
               <div className="px-3 py-8 text-center">
                 <Bell className="mx-auto mb-2 size-5 text-cyan-400" />
                 <p className="text-sm font-medium">Tudo sob controle</p>
-                <p className="mt-1 text-xs text-muted-foreground">Nenhum orçamento atingiu 70% e não há despesas altas sem cobertura.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Nenhuma fatura perto do vencimento, nenhum orçamento atingiu 70% e não há despesas altas sem cobertura.</p>
               </div>
             )}
           </div>

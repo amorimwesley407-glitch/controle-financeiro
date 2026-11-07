@@ -10,7 +10,9 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { FinancialGoalsOrbit } from "@/components/financial-goals-orbit";
 import { LocationTag } from "@/components/ui/location-tag";
 import { GoalsFeatureCard } from "@/components/goals-feature-card";
-import { Account, Budget, Category, GoalType, HideValueButton, Holding, Transfer, Tx, setAllMoneyHidden, useHiddenValue } from "@/components/finance/shared";
+import { Account, Budget, Category, GoalType, HideValueButton, Holding, Transfer, Tx, setAllMoneyHidden, useHiddenValue, useStoredFlag } from "@/components/finance/shared";
+import { getPurchaseDueDate } from "@/lib/accounts";
+import { CardBillsCard } from "@/components/finance/card-bills";
 import { AccountsView } from "@/components/finance/accounts-view";
 import { FormDialog } from "@/components/finance/form-dialog";
 import { TransactionTable } from "@/components/finance/transactions";
@@ -66,57 +68,25 @@ export function FinanceDashboard({
   const [view, setView] = useState<View>("dashboard");
   const [displayName, setDisplayName] = useState(user.name);
   const [displayImage, setDisplayImage] = useState(user.image);
-  const { income, expense, flow, categoryTotals } = useMemo(() => {
-    const now = new Date();
-    const buckets = Array.from({ length: 6 }, (_, offset) => {
-      const date = new Date(now.getFullYear(), now.getMonth() - 5 + offset, 1);
-      return {
-        key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
-        month: new Intl.DateTimeFormat("pt-BR", { month: "short" })
-          .format(date)
-          .replace(".", ""),
-        receitas: 0,
-        despesas: 0,
-        saldo: 0,
-      };
-    });
-    const lookup = new Map(buckets.map((item) => [item.key, item]));
-    const totals = new Map<number, number>();
-    let income = 0,
-      expense = 0;
-    for (const tx of transactions) {
-      if (tx.date > currentDate) continue;
-      if (tx.type === "income") income += tx.amountCents;
-      else if (tx.type === "expense") {
-        expense += tx.amountCents;
-        if (tx.categoryId)
-          totals.set(
-            tx.categoryId,
-            (totals.get(tx.categoryId) ?? 0) + tx.amountCents,
-          );
-      }
-      const bucket = lookup.get(tx.date.slice(0, 7));
-      if (bucket) {
-        if (tx.type === "income") bucket.receitas += tx.amountCents / 100;
-        else bucket.despesas += tx.amountCents / 100;
-        bucket.saldo = bucket.receitas - bucket.despesas;
-      }
-    }
-    return { income, expense, flow: buckets, categoryTotals: totals };
-  }, [currentDate, transactions]);
-  const balance = income - expense;
-  const byCategory = useMemo(
-    () =>
-      categories
-        .map((c, i) => ({
-          name: c.name,
-          value: (categoryTotals.get(c.id) ?? 0) / 100,
-          fill: `var(--chart-${(i % 3) + 1})`,
-        }))
-        .filter((x) => x.value > 0),
-    [categories, categoryTotals],
+  const [cardsByDueDate, setCardsByDueDate] = useStoredFlag("clareza:painel:cartao-no-vencimento");
+  const cards = useMemo(
+    () => accounts.filter((account) => account.kind === "credit_card" && account.closingDay && account.dueDay),
+    [accounts],
   );
-  const savings = income ? Math.round((balance / income) * 100) : 0;
+  const summary = useMemo(
+    () => summarize(transactions, categories, currentDate, (tx) => tx.date),
+    [transactions, categories, currentDate],
+  );
+  // No painel, as compras no cartão podem contar no vencimento da fatura, quando o dinheiro sai da conta.
+  const dashboardSummary = useMemo(() => {
+    if (!cardsByDueDate || !cards.length) return summary;
+    const byId = new Map(cards.map((card) => [card.id, card]));
+    return summarize(transactions, categories, currentDate, (tx) => {
+      const card = tx.accountId ? byId.get(tx.accountId) : undefined;
+      return card ? getPurchaseDueDate(tx.date, card.closingDay!, card.dueDay!) : tx.date;
+    });
+  }, [cardsByDueDate, cards, summary, transactions, categories, currentDate]);
+  const { income, expense, flow, byCategory, savings } = summary;
   const initials = displayName
     .split(" ")
     .map((x) => x[0])
@@ -304,6 +274,8 @@ export function FinanceDashboard({
               transactions={transactions}
               budgets={budgets}
               categories={categories}
+              cards={cards}
+              transfers={transfers}
               currentDate={currentDate}
             />
             <HideValueButton all hidden={allHidden} onToggle={toggleAllHidden} />
@@ -331,14 +303,26 @@ export function FinanceDashboard({
           {view === "dashboard" && (
             <div className="dashboard-feature-enabled flex flex-col gap-6">
               <DashboardView
-                income={income}
-                expense={expense}
-                balance={balance}
-                savings={savings}
-                flow={flow}
-                byCategory={byCategory}
+                income={dashboardSummary.income}
+                expense={dashboardSummary.expense}
+                balance={dashboardSummary.balance}
+                savings={dashboardSummary.savings}
+                flow={dashboardSummary.flow}
+                byCategory={dashboardSummary.byCategory}
                 holdings={holdings}
-              />
+              >
+                {cards.length > 0 && (
+                  <CardBillsCard
+                    cards={cards}
+                    accounts={accounts}
+                    transactions={transactions}
+                    transfers={transfers}
+                    currentDate={currentDate}
+                    byDueDate={cardsByDueDate}
+                    onByDueDateChange={setCardsByDueDate}
+                  />
+                )}
+              </DashboardView>
               <div className="grid items-stretch gap-6 xl:grid-cols-[minmax(300px,1fr)_minmax(0,2fr)]">
                 <GoalsFeatureCard goals={goals} />
                 <TransactionTable
@@ -349,7 +333,7 @@ export function FinanceDashboard({
                   accounts={accounts}
                 />
               </div>
-              <Insights savings={savings} expense={expense} income={income} />
+              <Insights savings={dashboardSummary.savings} expense={dashboardSummary.expense} income={dashboardSummary.income} />
             </div>
           )}
           {view === "reports" && (
@@ -433,4 +417,57 @@ export function FinanceDashboard({
       </main>
     </div>
   );
+}
+
+/**
+ * Totais até hoje e os últimos seis meses, usando `dateOf` como a data em que cada lançamento conta.
+ * Lançamentos com essa data no futuro ainda não entram.
+ */
+function summarize(transactions: Tx[], categories: Category[], currentDate: string, dateOf: (tx: Tx) => string) {
+  const now = new Date();
+  const flow = Array.from({ length: 6 }, (_, offset) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - 5 + offset, 1);
+    return {
+      key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
+      month: new Intl.DateTimeFormat("pt-BR", { month: "short" })
+        .format(date)
+        .replace(".", ""),
+      receitas: 0,
+      despesas: 0,
+      saldo: 0,
+    };
+  });
+  const lookup = new Map(flow.map((item) => [item.key, item]));
+  const totals = new Map<number, number>();
+  let income = 0,
+    expense = 0;
+  for (const tx of transactions) {
+    const date = dateOf(tx);
+    if (date > currentDate) continue;
+    if (tx.type === "income") income += tx.amountCents;
+    else if (tx.type === "expense") {
+      expense += tx.amountCents;
+      if (tx.categoryId)
+        totals.set(
+          tx.categoryId,
+          (totals.get(tx.categoryId) ?? 0) + tx.amountCents,
+        );
+    }
+    const bucket = lookup.get(date.slice(0, 7));
+    if (bucket) {
+      if (tx.type === "income") bucket.receitas += tx.amountCents / 100;
+      else bucket.despesas += tx.amountCents / 100;
+      bucket.saldo = bucket.receitas - bucket.despesas;
+    }
+  }
+  const byCategory = categories
+    .map((c, i) => ({
+      name: c.name,
+      value: (totals.get(c.id) ?? 0) / 100,
+      fill: `var(--chart-${(i % 3) + 1})`,
+    }))
+    .filter((x) => x.value > 0);
+  const balance = income - expense;
+  const savings = income ? Math.round((balance / income) * 100) : 0;
+  return { income, expense, balance, savings, flow, byCategory };
 }
