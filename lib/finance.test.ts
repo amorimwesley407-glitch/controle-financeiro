@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compoundProjection, getBudgetAlerts, getCategoryComparison, getFixedExpenses, getHoldingPerformance, getMonthlyForecast, getSpendingAlerts } from './finance'
+import { compoundProjection, getBudgetAlerts, getBudgetsToCopy, previousMonthOf, getCategoryComparison, getFixedExpenses, getHoldingPerformance, getMonthlyForecast, getSpendingAlerts } from './finance'
 
 const categories = [{ id: 1, name: 'Mercado' }, { id: 2, name: 'Lazer' }]
 const tx = (over: Partial<Parameters<typeof getBudgetAlerts>[0][number]>) => ({
@@ -208,5 +208,21 @@ describe('getFixedExpenses', () => {
     ], '2026-10-29')
     expect(result.items.map(item => [item.description, item.months])).toEqual([['Academia', 2]])
     expect(result.shareOfIncome).toBeNull()
+  })
+})
+
+describe('getBudgetsToCopy', () => {
+  const budget = (name: string, month: string, categoryId: number | null, limitCents = 1000) => ({ id: Math.random(), name, month, categoryId, limitCents })
+  it('copia os do mês de origem que faltam no destino, com o mês trocado', () => {
+    const budgets = [budget('Mercado', '2026-10', 1, 80000), budget('Lazer', '2026-10', 2, 30000), budget('Mercado', '2026-11', 1, 90000), budget('Viagem', '2026-09', 3)]
+    expect(getBudgetsToCopy(budgets, '2026-10', '2026-11')).toEqual([{ name: 'Lazer', limitCents: 30000, categoryId: 2, month: '2026-11' }])
+  })
+  it('nos orçamentos antigos sem categoria, compara pelo nome', () => {
+    const budgets = [budget('Farmácia', '2026-10', null), budget('Casa', '2026-10', null), budget(' farmácia ', '2026-11', null)]
+    expect(getBudgetsToCopy(budgets, '2026-10', '2026-11').map(item => item.name)).toEqual(['Casa'])
+  })
+  it('mês anterior vira o ano', () => {
+    expect(previousMonthOf('2027-01')).toBe('2026-12')
+    expect(previousMonthOf('2026-11')).toBe('2026-10')
   })
 })

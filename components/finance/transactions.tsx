@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { decodeOfx, parseOfx } from "@/lib/ofx";
-import { Account, Category, Empty, Field, Tx, brl, categoryIcons, getStreamingServiceImage, isStreamingCategory, repairImportedText, streamingServiceImages, streamingServices, transactionIconStyles } from "@/components/finance/shared";
+import { Account, Category, Empty, Field, Tx, brl, categoryIcons, getStreamingServiceImage, isStreamingCategory, repairImportedText, streamingServiceImages, streamingServices, transactionIconStyles, transactionTypeLabel } from "@/components/finance/shared";
 
 export function EditTransactionDialog({
   transaction,
@@ -137,7 +137,7 @@ export function EditTransactionDialog({
                 }}
               >
                 <SelectTrigger>
-                  <SelectValue>{(value: string) => (value === "income" ? "Receita" : "Despesa")}</SelectValue>
+                  <SelectValue>{transactionTypeLabel}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
@@ -386,6 +386,7 @@ export function TransactionTable({
   const [minimum, setMinimum] = useState("");
   const [maximum, setMaximum] = useState("");
   const [importing, setImporting] = useState(false);
+  const [importAccountId, setImportAccountId] = useState("none");
   const [installmentToRemove, setInstallmentToRemove] = useState<Tx | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
@@ -451,10 +452,14 @@ export function TransactionTable({
     URL.revokeObjectURL(url);
     toast.success("Arquivo CSV exportado.");
   }
-  function showImportResult(result: { count: number; skipped: number; newCategories: number }) {
-    const skipped = result.skipped
-      ? ` ${result.skipped} ${result.skipped === 1 ? "linha já existia e foi ignorada" : "linhas já existiam e foram ignoradas"}.`
-      : "";
+  function showImportResult(result: { count: number; skipped: number; newCategories: number; cardPayments: number }) {
+    const skipped =
+      (result.skipped
+        ? ` ${result.skipped} ${result.skipped === 1 ? "linha já existia e foi ignorada" : "linhas já existiam e foram ignoradas"}.`
+        : "") +
+      (result.cardPayments
+        ? ` ${result.cardPayments === 1 ? "1 pagamento de fatura não foi importado" : `${result.cardPayments} pagamentos de fatura não foram importados`}: registre com Pagar fatura, em Contas e cartões.`
+        : "");
     if (!result.count) toast.info(`Nenhuma transação nova.${skipped}`);
     else
       toast.success(
@@ -462,6 +467,7 @@ export function TransactionTable({
       );
   }
   async function importFile(file: File) {
+    const importAccount = importAccountId === "none" ? null : Number(importAccountId);
     setImporting(true);
     try {
       if (file.size > 2 * 1024 * 1024) throw new Error("O arquivo deve ter no máximo 2 MB");
@@ -469,7 +475,7 @@ export function TransactionTable({
         const rows = parseOfx(decodeOfx(await file.arrayBuffer()));
         if (!rows.length) throw new Error("O arquivo OFX não tem lançamentos");
         if (rows.length > 1000) throw new Error("O arquivo deve ter no máximo 1000 lançamentos");
-        showImportResult(await importTransactions(rows));
+        showImportResult(await importTransactions(rows, importAccount));
         return;
       }
       const csv = repairImportedText(await file.text()).replace(/^\uFEFF/, "");
@@ -554,7 +560,7 @@ export function TransactionTable({
             ).trim() || undefined,
         };
       });
-      const result = await importTransactions(parsed);
+      const result = await importTransactions(parsed, importAccount);
       showImportResult(result);
     } catch (error) {
       toast.error(
@@ -593,6 +599,24 @@ export function TransactionTable({
                   if (file) void importFile(file);
                 }}
               />
+              {accounts.length > 0 && (
+                <Select value={importAccountId} onValueChange={(value) => setImportAccountId(String(value))}>
+                  <SelectTrigger size="sm" aria-label="Conta do extrato a importar" title="Conta ou cartão em que os lançamentos importados vão entrar">
+                    <SelectValue>
+                      {(value: string) =>
+                        value === "none" ? "Importar sem conta" : `Importar em ${accounts.find((account) => String(account.id) === value)?.name ?? ""}`}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="none">Sem conta</SelectItem>
+                      {accounts.map((account) => (
+                        <SelectItem key={account.id} value={String(account.id)}>{account.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              )}
               <Button
                 type="button"
                 variant="outline"

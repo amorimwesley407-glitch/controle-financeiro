@@ -239,6 +239,33 @@ describe.skipIf(!testDatabaseUrl)('isolamento entre usuários', () => {
     })
   })
 
+  it('copia os orçamentos do mês anterior só do próprio usuário, sem duplicar', async () => {
+    const [{ id: lazer }] = await sql`INSERT INTO "categories" ("userId", "name", "type") VALUES (${ALICE}, 'Lazer', 'expense') RETURNING "id"`
+    const [{ id: transporte }] = await sql`SELECT "id" FROM "categories" WHERE "userId" = ${ALICE} AND "name" = 'Transporte'`
+    await sql`INSERT INTO "budgets" ("userId", "categoryId", "name", "limitCents", "month") VALUES (${ALICE}, ${lazer}, 'Lazer', 30000, '2026-10'), (${ALICE}, ${transporte}, 'Transporte', 20000, '2026-10'), (${ALICE}, ${transporte}, 'Transporte', 25000, '2026-11')`
+    expect(await actions.copyBudgets('2026-10', '2026-11')).toBe(1)
+    expect(await actions.copyBudgets('2026-10', '2026-11')).toBe(0)
+    const november = await sql`SELECT "name", "limitCents" FROM "budgets" WHERE "userId" = ${ALICE} AND "month" = '2026-11' ORDER BY "name"`
+    expect(november).toEqual([{ name: 'Lazer', limitCents: 30000 }, { name: 'Transporte', limitCents: 25000 }])
+    const [{ count }] = await sql`SELECT count(*)::int FROM "budgets" WHERE "userId" = ${BOB}`
+    expect(count).toBe(1)
+    await expect(actions.copyBudgets('2026-10', '2026-10')).rejects.toThrow()
+  })
+
+  it('importa em uma conta do próprio usuário e deixa de fora o pagamento da fatura do cartão', async () => {
+    const [{ id: card }] = await sql`INSERT INTO "financial_accounts" ("userId", "name", "kind", "closingDay", "dueDay") VALUES (${ALICE}, 'Cartão', 'credit_card', 10, 20) RETURNING "id"`
+    const [{ id: bobAccount }] = await sql`INSERT INTO "financial_accounts" ("userId", "name", "kind") VALUES (${BOB}, 'Conta', 'checking') RETURNING "id"`
+    const rows = [
+      { description: 'Padaria', type: 'expense' as const, date: '2026-10-05', amountCents: 1200 },
+      { description: 'Estorno Loja', type: 'income' as const, date: '2026-10-06', amountCents: 500 },
+      { description: 'Pagamento recebido', type: 'income' as const, date: '2026-10-07', amountCents: 9000 },
+    ]
+    await expect(actions.importTransactions(rows, bobAccount)).rejects.toThrow('Conta inválida')
+    expect(await actions.importTransactions(rows, card)).toMatchObject({ count: 2, cardPayments: 1 })
+    const imported = await sql`SELECT "description", "accountId" FROM "transactions" WHERE "userId" = ${ALICE} AND "date" >= '2026-10-05' ORDER BY "date"`
+    expect(imported).toEqual([{ description: 'Padaria', accountId: card }, { description: 'Estorno Loja', accountId: card }])
+  })
+
   describe('metas ligadas a contas e aparência do cartão', () => {
     const goalForm = (fields: Record<string, string>) => form({ name: 'Reserva', target: '1000', current: '0', deadline: '', ...fields })
 

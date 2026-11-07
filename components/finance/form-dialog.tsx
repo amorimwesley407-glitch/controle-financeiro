@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { getInstallmentAmounts } from "@/lib/accounts";
-import { Account, Category, Field, Quote, brl, categoryIconOptions, categoryIcons, investmentOptions, isFixedIncomeType, isStreamingCategory, streamingServiceImages, streamingServices } from "@/components/finance/shared";
+import { Account, Category, Field, Quote, brl, categoryIconOptions, categoryIcons, investmentOptions, isFixedIncomeType, isStreamingCategory, streamingServiceImages, streamingServices, transactionTypeLabel, CategoryIconLabel, assetTypeLabels } from "@/components/finance/shared";
 
 /** Escolha da conta que a meta acompanha. Cartões ficam de fora porque o saldo deles é dívida. */
 export function GoalAccountField({ accounts, value, onChange }: { accounts: Account[]; value: string; onChange: (value: string) => void }) {
@@ -194,7 +194,7 @@ export function FormDialog({
                     }}
                   >
                     <SelectTrigger>
-                      <SelectValue>{(value: string) => (value === "income" ? "Receita" : "Despesa")}</SelectValue>
+                      <SelectValue>{transactionTypeLabel}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
@@ -364,7 +364,7 @@ export function FormDialog({
                 <Field label="Tipo">
                   <Select name="type" defaultValue="expense">
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue>{transactionTypeLabel}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
@@ -377,7 +377,7 @@ export function FormDialog({
                 <Field label="Ícone padrão">
                   <Select name="icon" defaultValue="wallet">
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue>{(value: string) => <CategoryIconLabel value={value} />}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
@@ -496,7 +496,7 @@ export function FormDialog({
                     }}
                   >
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue>{(value: string) => assetTypeLabels[value] ?? value}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>

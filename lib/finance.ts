@@ -30,6 +30,18 @@ export function getBudgetAlerts<T extends BudgetItem>(
     .sort((a, b) => b.percentage - a.percentage)
 }
 
+/**
+ * Orçamentos de `fromMonth` que ainda não existem em `toMonth`, já com o mês trocado.
+ * Um orçamento já existe quando o mês de destino tem outro da mesma categoria (ou do mesmo nome, nos antigos sem categoria).
+ */
+export function getBudgetsToCopy<T extends BudgetItem>(budgets: T[], fromMonth: string, toMonth: string) {
+  const keyOf = (budget: BudgetItem) => (budget.categoryId ? `categoria:${budget.categoryId}` : `nome:${normalize(budget.name)}`)
+  const taken = new Set(budgets.filter(budget => budget.month === toMonth).map(keyOf))
+  return budgets
+    .filter(budget => budget.month === fromMonth && !taken.has(keyOf(budget)))
+    .map(({ name, limitCents, categoryId }) => ({ name, limitCents, categoryId, month: toMonth }))
+}
+
 type ForecastTx = { type: string; amountCents: number; date: string }
 
 /** Saldo realizado + lançamentos futuros de `selectedMonth` (AAAA-MM), em relação a `currentDate` (AAAA-MM-DD). */
@@ -95,7 +107,7 @@ export function getSpendingAlerts(transactions: AlertTx[], income: number, expen
 
 type ComparisonTx = { type: string; amountCents: number; date: string; categoryName?: string }
 
-const previousMonthOf = (month: string) => {
+export const previousMonthOf = (month: string) => {
   const [year, monthIndex] = month.split('-').map(Number)
   return monthIndex === 1 ? `${year - 1}-12` : `${year}-${String(monthIndex - 1).padStart(2, '0')}`
 }

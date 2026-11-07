@@ -2,13 +2,14 @@
 
 import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
-import { and, between, desc, eq, gt, isNotNull, or } from 'drizzle-orm'
+import { and, between, desc, eq, gt, inArray, isNotNull, or } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { budgets, categories, financialAccounts, goals, holdings, transactions, transfers, user as users } from '@/lib/db/schema'
 import { CARD_BRANDS, CARD_COLORS, getInstallmentAmounts, getInstallmentDates } from '@/lib/accounts'
-import { findMissingCategories, matchCategory, MAX_NEW_CATEGORIES_PER_IMPORT, skipExistingTransactions } from '@/lib/import'
+import { findMissingCategories, isCardPayment, matchCategory, MAX_NEW_CATEGORIES_PER_IMPORT, skipExistingTransactions } from '@/lib/import'
 import { findLearnedCategory, findSuggestedCategory } from '@/lib/categorize'
+import { getBudgetsToCopy } from '@/lib/finance'
 import { parseMoneyToCents } from '@/lib/money'
 import { removeImage, uploadImage } from '@/lib/storage'
 import { z } from 'zod'
@@ -208,13 +209,19 @@ export async function updateCategory(id:number,form:FormData){const userId=await
 export async function deleteCategory(id:number){const userId=await getUserId();const safeId=z.number().int().positive().parse(id);const existing=await db.select().from(categories).where(and(eq(categories.id,safeId),eq(categories.userId,userId))).limit(1);if(!existing[0])throw new Error('Categoria não encontrada');await db.update(transactions).set({categoryId:null}).where(and(eq(transactions.categoryId,safeId),eq(transactions.userId,userId)));await db.delete(categories).where(and(eq(categories.id,safeId),eq(categories.userId,userId)));await removeCategoryImage(existing[0].imagePath,userId);revalidatePath('/')}
 
 const importedTransaction=z.object({description:z.string().trim().min(2).max(80),type:z.enum(['income','expense']),date,amountCents:z.number().int().safe().positive(),categoryName:z.string().trim().max(30).optional()})
-export async function importTransactions(input:unknown){
+/** Importa as linhas do CSV ou OFX, opcionalmente em uma conta ou cartão do usuário. */
+export async function importTransactions(input:unknown,accountId?:number|null){
   const userId=await getUserId()
   const parsedRows=z.array(importedTransaction).min(1).max(1000).parse(input)
-  const dates=parsedRows.map(row=>row.date).sort()
+  const account=await getOwnedAccount(accountId?String(accountId):null,userId)
+  const isCard=account?.kind==='credit_card'
+  const cardPayments=isCard?parsedRows.filter(isCardPayment).length:0
+  const importable=isCard?parsedRows.filter(row=>!isCardPayment(row)):parsedRows
+  if(!importable.length)return{count:0,skipped:0,newCategories:0,cardPayments}
+  const dates=importable.map(row=>row.date).sort()
   const existing=await db.select({type:transactions.type,date:transactions.date,amountCents:transactions.amountCents,description:transactions.description}).from(transactions).where(and(eq(transactions.userId,userId),between(transactions.date,dates[0],dates.at(-1)!)))
-  const {fresh:rows,skipped}=skipExistingTransactions(parsedRows,existing)
-  if(!rows.length)return{count:0,skipped,newCategories:0}
+  const {fresh:rows,skipped}=skipExistingTransactions(importable,existing)
+  if(!rows.length)return{count:0,skipped,newCategories:0,cardPayments}
   let userCategories=await db.select().from(categories).where(eq(categories.userId,userId))
   const missing=findMissingCategories(rows,userCategories)
   if(missing.length>MAX_NEW_CATEGORIES_PER_IMPORT)throw new Error(`O arquivo cria ${missing.length} categorias novas (máximo ${MAX_NEW_CATEGORIES_PER_IMPORT}). Verifique a coluna Categoria.`)
@@ -223,10 +230,10 @@ export async function importTransactions(input:unknown){
     userCategories=await db.select().from(categories).where(eq(categories.userId,userId))
   }
   const suggest=await categorySuggester(userId,userCategories)
-  const values=rows.map(row=>({userId,description:row.description,type:row.type,date:row.date,amountCents:row.amountCents,categoryId:(matchCategory(row,userCategories)??(row.categoryName?.trim()?undefined:suggest(row.description,row.type)))?.id??null}))
+  const values=rows.map(row=>({userId,accountId:account?.id??null,description:row.description,type:row.type,date:row.date,amountCents:row.amountCents,categoryId:(matchCategory(row,userCategories)??(row.categoryName?.trim()?undefined:suggest(row.description,row.type)))?.id??null}))
   await db.insert(transactions).values(values)
   revalidatePath('/')
-  return{count:values.length,skipped,newCategories:missing.length}
+  return{count:values.length,skipped,newCategories:missing.length,cardPayments}
 }
 /** Conta que a meta acompanha. Cartão não serve: o saldo dele é dívida, não dinheiro guardado. */
 async function getGoalAccount(value: FormDataEntryValue | null, userId: string) {
@@ -238,6 +245,18 @@ export async function addGoal(form: FormData) { const userId = await getUserId()
 export async function addBudget(form: FormData) { const userId = await getUserId(); const parsed=z.object({name:z.string().trim().min(2).max(50),limit:money,month,categoryId:z.coerce.number().int().positive()}).parse({name:form.get('name'),limit:form.get('limit'),month:form.get('month'),categoryId:form.get('categoryId')});const category=await db.select({id:categories.id,type:categories.type}).from(categories).where(and(eq(categories.id,parsed.categoryId),eq(categories.userId,userId))).limit(1);if(!category[0]||category[0].type!=='expense')throw new Error('Selecione uma categoria de despesa válida'); await db.insert(budgets).values({ userId, name:parsed.name, limitCents:parsed.limit, month:parsed.month,categoryId:parsed.categoryId }); revalidatePath('/') }
 export async function updateGoal(id:number,form:FormData){const userId=await getUserId();const safeId=z.number().int().positive().parse(id);const parsed=z.object({name:z.string().trim().min(2).max(50),target:money,current:nonNegativeMoney,deadline:z.union([date,z.literal('')])}).parse({name:form.get('name'),target:form.get('target'),current:form.get('current'),deadline:textValue(form.get('deadline'))});const account=await getGoalAccount(form.get('accountId'),userId);if(!account&&parsed.current>parsed.target)throw new Error('O valor atual não pode superar o objetivo');const result=await db.update(goals).set({name:parsed.name,targetCents:parsed.target,currentCents:account?undefined:parsed.current,accountId:account?.id??null,deadline:parsed.deadline||null}).where(and(eq(goals.id,safeId),eq(goals.userId,userId))).returning({id:goals.id});if(!result.length)throw new Error('Meta não encontrada');revalidatePath('/')}
 export async function deleteGoal(id:number){const userId=await getUserId();const safeId=z.number().int().positive().parse(id);const result=await db.delete(goals).where(and(eq(goals.id,safeId),eq(goals.userId,userId))).returning({id:goals.id});if(!result.length)throw new Error('Meta não encontrada');revalidatePath('/')}
+/** Copia para `toMonth` os orçamentos de `fromMonth` que ainda não existem lá. Devolve quantos foram criados. */
+export async function copyBudgets(fromMonth: string, toMonth: string) {
+  const userId = await getUserId()
+  const from = month.parse(fromMonth)
+  const to = month.parse(toMonth)
+  if (from === to) throw new Error('Escolha meses diferentes')
+  const rows = await db.select().from(budgets).where(and(eq(budgets.userId, userId), inArray(budgets.month, [from, to])))
+  const copies = getBudgetsToCopy(rows, from, to)
+  if (copies.length) await db.insert(budgets).values(copies.map(copy => ({ userId, ...copy })))
+  revalidatePath('/')
+  return copies.length
+}
 export async function updateBudget(id:number,form:FormData){const userId=await getUserId();const safeId=z.number().int().positive().parse(id);const parsed=z.object({name:z.string().trim().min(2).max(50),limit:money,month,categoryId:z.coerce.number().int().positive()}).parse({name:form.get('name'),limit:form.get('limit'),month:form.get('month'),categoryId:form.get('categoryId')});const category=await db.select({id:categories.id,type:categories.type}).from(categories).where(and(eq(categories.id,parsed.categoryId),eq(categories.userId,userId))).limit(1);if(!category[0]||category[0].type!=='expense')throw new Error('Selecione uma categoria de despesa válida');const result=await db.update(budgets).set({name:parsed.name,limitCents:parsed.limit,month:parsed.month,categoryId:parsed.categoryId}).where(and(eq(budgets.id,safeId),eq(budgets.userId,userId))).returning({id:budgets.id});if(!result.length)throw new Error('Orçamento não encontrado');revalidatePath('/')}
 export async function deleteBudget(id:number){const userId=await getUserId();const safeId=z.number().int().positive().parse(id);const result=await db.delete(budgets).where(and(eq(budgets.id,safeId),eq(budgets.userId,userId))).returning({id:budgets.id});if(!result.length)throw new Error('Orçamento não encontrado');revalidatePath('/')}
 export async function addHolding(form: FormData) { const userId = await getUserId(); const assetType=z.enum(['stock','crypto','fund','cdb','treasury']).parse(form.get('assetType'));const parsed=z.object({symbol:z.string().trim().toUpperCase().regex(/^[A-Z0-9.-]{2,20}$/),quantity:z.coerce.number().finite().positive(),averageCost:money,applicationDate:date.optional()}).parse({symbol:form.get('symbol'),quantity:form.get('quantity'),averageCost:form.get('averageCost'),applicationDate:textValue(form.get('applicationDate'))||undefined});if((assetType==='cdb'||assetType==='treasury')&&!parsed.applicationDate)throw new Error('Informe a data da aplicação'); await db.insert(holdings).values({ userId, symbol:parsed.symbol, assetType, quantity:String(parsed.quantity), averageCostCents:parsed.averageCost,applicationDate:parsed.applicationDate??null }); revalidatePath('/') }

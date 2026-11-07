@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Pencil, Target, Trash2, WalletCards } from "lucide-react";
-import { deleteBudget, deleteGoal, updateBudget, updateGoal } from "@/app/actions/finance";
+import { Copy, Pencil, Target, Trash2, WalletCards } from "lucide-react";
+import { copyBudgets, deleteBudget, deleteGoal, updateBudget, updateGoal } from "@/app/actions/finance";
+import { getBudgetsToCopy, previousMonthOf } from "@/lib/finance";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -181,12 +182,32 @@ export function PlanningView({
   budgets,
   categories,
   accounts = [],
+  currentDate,
 }: {
   goals: GoalType[];
   budgets: Budget[];
   categories: Category[];
   accounts?: Account[];
+  currentDate: string;
 }) {
+  const [copying, startCopy] = useTransition();
+  const currentMonth = currentDate.slice(0, 7);
+  const previousMonth = previousMonthOf(currentMonth);
+  const toCopy = getBudgetsToCopy(budgets, previousMonth, currentMonth).length;
+  // Mês atual e próximos primeiro; os passados ficam recolhidos para a lista não crescer a cada mês copiado.
+  const byMonth = (a: Budget, b: Budget) => a.month.localeCompare(b.month) || a.name.localeCompare(b.name, "pt-BR");
+  const upcomingBudgets = budgets.filter((budget) => budget.month >= currentMonth).sort(byMonth);
+  const pastBudgets = budgets.filter((budget) => budget.month < currentMonth).sort((a, b) => byMonth(b, a));
+  function copyPrevious() {
+    startCopy(async () => {
+      try {
+        const count = await copyBudgets(previousMonth, currentMonth);
+        toast.success(`${count} ${count === 1 ? "orçamento copiado" : "orçamentos copiados"} para ${monthName(currentMonth)}.`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Não foi possível copiar os orçamentos.");
+      }
+    });
+  }
   async function removeGoal(goal: GoalType) {
     if (!window.confirm(`Excluir a meta “${goal.name}”?`)) return;
     try {
@@ -281,45 +302,95 @@ export function PlanningView({
         </CardContent>
       </Card>
       <Card className="overflow-hidden">
-        <CardHeader className="flex-row items-start justify-between">
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle>Orçamentos</CardTitle>
             <CardDescription>Limites planejados por mês</CardDescription>
           </div>
-          <FormDialog type="budget" categories={categories} />
+          <div className="flex flex-wrap gap-2">
+            {toCopy > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={copyPrevious}
+                disabled={copying}
+                title={`Cria em ${monthName(currentMonth)} ${toCopy === 1 ? "o orçamento" : `os ${toCopy} orçamentos`} de ${monthName(previousMonth)} que ainda não ${toCopy === 1 ? "existe" : "existem"}.`}
+              >
+                <Copy data-icon="inline-start" />
+                {copying ? "Copiando…" : `Copiar de ${monthName(previousMonth, false)}`}
+              </Button>
+            )}
+            <FormDialog type="budget" categories={categories} />
+          </div>
         </CardHeader>
-        <CardContent className="flex flex-col divide-y">
-          {budgets.length ? (
-            budgets.map((b) => {
-              const share = Math.max(6, Math.round((b.limitCents / maxBudget) * 100));
-              return <div key={b.id} className="group flex items-center gap-4 py-4 first:pt-0 last:pb-0">
-                <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-muted text-primary shadow-inner">
-                  <WalletCards className="size-5" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="truncate font-semibold">{b.name}</p>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <span className="mr-1 font-mono text-sm font-semibold">{brl(b.limitCents)}</span>
-                      <EditBudgetDialog budget={b} categories={categories} />
-                      <Button variant="ghost" size="icon-sm" aria-label={`Excluir ${b.name}`} onClick={() => void removeBudget(b)}><Trash2 /></Button>
-                    </div>
-                  </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
-                    <div className="h-full rounded-full bg-primary transition-[width]" style={{width:`${share}%`}} />
-                  </div>
-                  <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Limite mensal</span>
-                    <span>{new Date(`${b.month}-01T12:00:00`).toLocaleDateString("pt-BR",{month:"long",year:"numeric"})}</span>
-                  </div>
-                </div>
-              </div>;
-            })
+        <CardContent className="flex flex-col">
+          {upcomingBudgets.length ? (
+            <div className="flex flex-col divide-y">
+              {upcomingBudgets.map((budget) => (
+                <BudgetRow key={budget.id} budget={budget} categories={categories} maxBudget={maxBudget} onRemove={removeBudget} />
+              ))}
+            </div>
           ) : (
-            <Empty text="Defina um orçamento para controlar seus limites." />
+            <Empty
+              text={
+                toCopy > 0
+                  ? `Nenhum orçamento para ${monthName(currentMonth)}. Use “Copiar de ${monthName(previousMonth, false)}” para repetir os do mês passado.`
+                  : "Defina um orçamento para controlar seus limites."
+              }
+            />
+          )}
+          {pastBudgets.length > 0 && (
+            <details className="mt-4 rounded-lg border p-3">
+              <summary className="cursor-pointer text-sm text-muted-foreground">
+                Meses anteriores ({pastBudgets.length})
+              </summary>
+              <div className="mt-2 flex flex-col divide-y">
+                {pastBudgets.map((budget) => (
+                  <BudgetRow key={budget.id} budget={budget} categories={categories} maxBudget={maxBudget} onRemove={removeBudget} />
+                ))}
+              </div>
+            </details>
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+/** "novembro de 2026", ou só "novembro" com `withYear` falso. */
+function monthName(month: string, withYear = true) {
+  return new Date(`${month}-01T12:00:00`).toLocaleDateString("pt-BR", withYear ? { month: "long", year: "numeric" } : { month: "long" });
+}
+
+function BudgetRow({ budget, categories, maxBudget, onRemove }: {
+  budget: Budget;
+  categories: Category[];
+  maxBudget: number;
+  onRemove: (budget: Budget) => void;
+}) {
+  const share = Math.max(6, Math.round((budget.limitCents / maxBudget) * 100));
+  return (
+    <div className="group flex items-center gap-4 py-4 first:pt-0 last:pb-0">
+      <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-muted text-primary shadow-inner">
+        <WalletCards className="size-5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-3">
+          <p className="truncate font-semibold">{budget.name}</p>
+          <div className="flex shrink-0 items-center gap-1">
+            <span className="mr-1 font-mono text-sm font-semibold">{brl(budget.limitCents)}</span>
+            <EditBudgetDialog budget={budget} categories={categories} />
+            <Button variant="ghost" size="icon-sm" aria-label={`Excluir ${budget.name}`} onClick={() => onRemove(budget)}><Trash2 /></Button>
+          </div>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${share}%` }} />
+        </div>
+        <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+          <span>Limite mensal</span>
+          <span>{monthName(budget.month)}</span>
+        </div>
+      </div>
     </div>
   );
 }

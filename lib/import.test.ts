@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findMissingCategories, matchCategory, skipExistingTransactions } from './import'
+import { findMissingCategories, isCardPayment, matchCategory, skipExistingTransactions } from './import'
 
 const existing = [{ id: 1, name: 'Mercado', type: 'expense' }, { id: 2, name: 'Salário', type: 'income' }]
 
@@ -57,5 +57,14 @@ describe('skipExistingTransactions', () => {
     const { fresh, skipped } = skipExistingTransactions([row('Ifood'), row('Ifood')], [row('Ifood')])
     expect(skipped).toBe(1)
     expect(fresh).toHaveLength(1)
+  })
+})
+
+describe('isCardPayment', () => {
+  it('reconhece o pagamento da fatura, mas não estornos nem despesas', () => {
+    expect(isCardPayment({ type: 'income', description: 'Pagamento recebido' })).toBe(true)
+    expect(isCardPayment({ type: 'income', description: 'PGTO. FATURA' })).toBe(true)
+    expect(isCardPayment({ type: 'income', description: 'Estorno Loja X' })).toBe(false)
+    expect(isCardPayment({ type: 'expense', description: 'Pagamento de boleto' })).toBe(false)
   })
 })

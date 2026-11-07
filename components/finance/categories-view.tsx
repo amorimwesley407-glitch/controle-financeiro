@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Category, Empty, Field, categoryIconOptions, categoryIcons } from "@/components/finance/shared";
+import { Category, Empty, Field, categoryIconOptions, categoryIcons, transactionTypeLabel, CategoryIconLabel } from "@/components/finance/shared";
 import { FormDialog } from "@/components/finance/form-dialog";
 
 export function EditCategoryDialog({ category }: { category: Category }) {
@@ -59,7 +59,7 @@ export function EditCategoryDialog({ category }: { category: Category }) {
             <Field label="Tipo">
               <Select name="type" defaultValue={category.type}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue>{transactionTypeLabel}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
@@ -72,7 +72,7 @@ export function EditCategoryDialog({ category }: { category: Category }) {
             <Field label="Ícone padrão">
               <Select name="icon" defaultValue={category.icon}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue>{(value: string) => <CategoryIconLabel value={value} />}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
