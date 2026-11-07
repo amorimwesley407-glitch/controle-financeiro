@@ -129,6 +129,8 @@ export async function updateTransaction(id: number, form: FormData) {
     const category = await db.select({ id: categories.id, type: categories.type }).from(categories).where(and(eq(categories.id, categoryId), eq(categories.userId, userId))).limit(1)
     if (!category[0] || category[0].type !== parsed.type) categoryId = null
   }
+  // Numa parte de compra dividida, valor, tipo e categoria só mudam por "Editar divisão", para a soma continuar fechando.
+  if (existing[0].splitGroup) { parsed.amount = existing[0].amountCents; parsed.type = existing[0].type as 'income' | 'expense'; categoryId = existing[0].categoryId }
   const notes = parseNotes(form)
   const account = await getOwnedAccount(form.get('accountId'), userId)
   const accountId = account?.id ?? null
@@ -137,14 +139,17 @@ export async function updateTransaction(id: number, form: FormData) {
   const removeImage = form.get('removeImage') === 'true'
   await db.update(transactions).set({ description: parsed.description, type: parsed.type, date: parsed.date, amountCents: parsed.amount, categoryId, accountId, notes, recurring, billStatus, imagePath: newImage??(removeImage?null:existing[0].imagePath) }).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId)))
   if ((newImage || removeImage) && existing[0].imagePath) await removeTransactionImage(existing[0].imagePath,userId)
+  // Numa compra dividida, descrição, data, conta e observações valem para todas as partes.
+  if (existing[0].splitGroup) await db.update(transactions).set({ description: parsed.description, date: parsed.date, accountId, notes }).where(and(eq(transactions.userId, userId), eq(transactions.splitGroup, existing[0].splitGroup)))
   if (form.get('scope') === 'following') await updateFollowingInstallments(existing[0], { description: parsed.description, type: parsed.type, amountCents: parsed.amount, categoryId, accountId, notes }, userId)
   if(recurrenceEnd){const values=[];const [year,monthIndex,day]=parsed.date.split('-').map(Number);for(let offset=1;offset<=120;offset++){const targetMonth=monthIndex-1+offset;const targetYear=year+Math.floor(targetMonth/12);const month=((targetMonth%12)+12)%12;const lastDay=new Date(Date.UTC(targetYear,month+1,0)).getUTCDate();const occurrence=`${targetYear}-${String(month+1).padStart(2,'0')}-${String(Math.min(day,lastDay)).padStart(2,'0')}`;if(occurrence>recurrenceEnd)break;values.push({userId,description:parsed.description,type:parsed.type,date:occurrence,amountCents:parsed.amount,categoryId,accountId,notes,recurring:true,billStatus:billStatus&&'pending'})}if(values.length)await db.insert(transactions).values(values)}
   revalidatePath('/')
 }
 export async function deleteTransaction(id: number) { const userId = await getUserId(); const safeId = z.number().int().positive().parse(id); const existing=await db.select().from(transactions).where(and(eq(transactions.id,safeId),eq(transactions.userId,userId))).limit(1); if(!existing[0])throw new Error('Transação não encontrada'); await db.delete(transactions).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId))); await removeTransactionImage(existing[0].imagePath,userId); revalidatePath('/') }
 /**
- * Divide um lançamento entre categorias: o original fica com a primeira parte e cada outra parte vira um lançamento
- * igual (descrição, data, conta, observações), só com o próprio valor e categoria. A soma das partes é o valor original.
+ * Divide um lançamento entre categorias, ou refaz a divisão de um já dividido. As partes ficam ligadas pelo mesmo
+ * splitGroup: a primeira parte reaproveita o lançamento mais antigo do grupo e as outras são lançamentos iguais
+ * (descrição, data, conta, observações), só com o próprio valor e categoria. A soma é sempre o valor total da compra.
  */
 export async function splitTransaction(id: number, parts: { categoryId: number | null; amountCents: number }[]) {
   const userId = await getUserId()
@@ -153,19 +158,52 @@ export async function splitTransaction(id: number, parts: { categoryId: number |
   const [original] = await db.select().from(transactions).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId))).limit(1)
   if (!original) throw new Error('Transação não encontrada')
   if (original.installmentGroup) throw new Error('Parcelas não podem ser divididas')
-  if (safeParts.reduce((sum, part) => sum + part.amountCents, 0) !== original.amountCents) throw new Error('As partes precisam somar o valor do lançamento')
+  const group = original.splitGroup ? await getSplitGroup(original.splitGroup, userId) : [original]
+  const total = group.reduce((sum, item) => sum + item.amountCents, 0)
+  if (safeParts.reduce((sum, part) => sum + part.amountCents, 0) !== total) throw new Error('As partes precisam somar o valor do lançamento')
   const categoryIds = [...new Set(safeParts.map(part => part.categoryId).filter((categoryId): categoryId is number => categoryId !== null))]
   if (categoryIds.length) {
     const owned = await db.select({ id: categories.id }).from(categories).where(and(eq(categories.userId, userId), eq(categories.type, original.type), inArray(categories.id, categoryIds)))
     if (owned.length !== categoryIds.length) throw new Error('Categoria inválida para este lançamento')
   }
+  const [head, ...others] = group
   const [first, ...rest] = safeParts
-  // A imagem fica só no original, para não apagar o arquivo de outro lançamento ao excluir uma das partes.
-  const { description, type, date: day, notes, accountId, recurring, billStatus } = original
+  const splitGroup = original.splitGroup ?? crypto.randomUUID()
+  // A imagem fica só na primeira parte, para não apagar o arquivo de outro lançamento ao excluir uma das partes.
+  const { description, type, date: day, notes, accountId, recurring, billStatus } = head
   await db.transaction(async tx => {
-    await tx.update(transactions).set({ amountCents: first.amountCents, categoryId: first.categoryId }).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId)))
-    await tx.insert(transactions).values(rest.map(part => ({ userId, description, type, date: day, notes, accountId, recurring, billStatus, amountCents: part.amountCents, categoryId: part.categoryId })))
+    await tx.update(transactions).set({ amountCents: first.amountCents, categoryId: first.categoryId, splitGroup }).where(and(eq(transactions.id, head.id), eq(transactions.userId, userId)))
+    if (others.length) await tx.delete(transactions).where(and(eq(transactions.userId, userId), inArray(transactions.id, others.map(item => item.id))))
+    await tx.insert(transactions).values(rest.map(part => ({ userId, description, type, date: day, notes, accountId, recurring, billStatus, splitGroup, amountCents: part.amountCents, categoryId: part.categoryId })))
   })
+  await Promise.all(others.map(item => removeTransactionImage(item.imagePath, userId)))
+  revalidatePath('/')
+}
+/** Partes de uma divisão do usuário, da mais antiga para a mais nova. */
+async function getSplitGroup(group: string, userId: string) {
+  const rows = await db.select().from(transactions).where(and(eq(transactions.userId, userId), eq(transactions.splitGroup, z.string().uuid().parse(group)))).orderBy(transactions.id)
+  if (!rows.length) throw new Error('Lançamento dividido não encontrado')
+  return rows
+}
+/** Desfaz a divisão: a primeira parte volta a ter o valor total e as outras são apagadas. */
+export async function joinSplit(group: string) {
+  const userId = await getUserId()
+  const [head, ...others] = await getSplitGroup(group, userId)
+  const total = [head, ...others].reduce((sum, item) => sum + item.amountCents, 0)
+  await db.transaction(async tx => {
+    await tx.update(transactions).set({ amountCents: total, splitGroup: null }).where(and(eq(transactions.id, head.id), eq(transactions.userId, userId)))
+    if (others.length) await tx.delete(transactions).where(and(eq(transactions.userId, userId), inArray(transactions.id, others.map(item => item.id))))
+  })
+  await Promise.all(others.map(item => removeTransactionImage(item.imagePath, userId)))
+  revalidatePath('/')
+}
+/** Exclui a compra dividida inteira, com todas as partes. */
+export async function deleteSplit(group: string) {
+  const userId = await getUserId()
+  const safeGroup = z.string().uuid().parse(group)
+  const removed = await db.delete(transactions).where(and(eq(transactions.userId, userId), eq(transactions.splitGroup, safeGroup))).returning({ imagePath: transactions.imagePath })
+  if (!removed.length) throw new Error('Lançamento dividido não encontrado')
+  await Promise.all(removed.map(item => removeTransactionImage(item.imagePath, userId)))
   revalidatePath('/')
 }
 /** Marca uma conta a pagar como paga, ou volta para pendente. */
