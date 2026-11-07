@@ -246,3 +246,34 @@ export function getNetWorthHistory(accounts: { initialBalanceCents: number }[], 
   }
   return history
 }
+
+const plainText = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+
+/** Categorias que o Imposto de Renda deixa deduzir: saúde (sem limite) e educação (com limite anual por pessoa). */
+export const isDeductibleCategory = (name?: string | null) => Boolean(name && /\b(saude|educacao)\b/.test(plainText(name)))
+
+type AnnualTx = { type: string; amountCents: number; date: string; categoryName?: string }
+
+/** Totais de `year` (AAAA) até `currentDate`, por categoria, e as despesas dedutíveis lançamento a lançamento. */
+export function getAnnualSummary<T extends AnnualTx>(transactions: T[], year: string, currentDate: string) {
+  const items = transactions.filter(item => item.date.startsWith(`${year}-`) && item.date <= currentDate)
+  const byCategory = (type: string) => {
+    const totals = new Map<string, number>()
+    for (const item of items) {
+      if (item.type !== type) continue
+      const name = item.categoryName ?? 'Sem categoria'
+      totals.set(name, (totals.get(name) ?? 0) + item.amountCents)
+    }
+    return [...totals].map(([name, totalCents]) => ({ name, totalCents, deductible: type === 'expense' && isDeductibleCategory(name) })).sort((a, b) => b.totalCents - a.totalCents)
+  }
+  const sum = (type: string) => items.reduce((total, item) => total + (item.type === type ? item.amountCents : 0), 0)
+  const deductible = items.filter(item => item.type === 'expense' && isDeductibleCategory(item.categoryName)).sort((a, b) => a.date.localeCompare(b.date))
+  return {
+    incomeCents: sum('income'),
+    expenseCents: sum('expense'),
+    incomeByCategory: byCategory('income'),
+    expenseByCategory: byCategory('expense'),
+    deductible,
+    deductibleCents: deductible.reduce((total, item) => total + item.amountCents, 0),
+  }
+}

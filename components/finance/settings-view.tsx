@@ -2,12 +2,12 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Camera, LockKeyhole, Mail, Palette, ShieldCheck, Trash2, TriangleAlert, UserRound } from "lucide-react";
+import { Camera, Download, LockKeyhole, Mail, Palette, ShieldCheck, Trash2, TriangleAlert, UserRound } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { updateUserProfile } from "@/app/actions/finance";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -266,6 +266,26 @@ export function SettingsView({
         </Card>
       </div>
       </div>
+      <Card>
+        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-sky-400/20 bg-sky-400/10 text-sky-400">
+              <Download className="size-5" />
+            </span>
+            <div>
+              <CardTitle className="text-base">Seus dados</CardTitle>
+              <CardDescription>
+                Baixe tudo o que você cadastrou (lançamentos, contas e cartões, transferências, metas, orçamentos, investimentos e categorias) em um arquivo JSON. Serve de backup e é seu direito pela LGPD.
+              </CardDescription>
+            </div>
+          </div>
+          {/* Link comum: o navegador baixa o arquivo que a rota devolve como anexo. */}
+          <a href="/api/export" download className={buttonVariants({ variant: "outline", className: "shrink-0" })}>
+            <Download className="size-4" />
+            Baixar meus dados
+          </a>
+        </CardHeader>
+      </Card>
       <Card className="border-rose-500/25 bg-rose-500/[.025]">
         <CardHeader className="flex-row items-start justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -283,7 +303,7 @@ export function SettingsView({
               <DialogHeader>
                 <DialogTitle>Apagar sua conta?</DialogTitle>
                 <DialogDescription>
-                  Esta ação não pode ser desfeita. Transações, categorias, metas, orçamentos, investimentos e imagens serão excluídos.
+                  Esta ação não pode ser desfeita. Transações, categorias, metas, orçamentos, investimentos e imagens serão excluídos. Se quiser guardar uma cópia, use antes “Baixar meus dados”.
                 </DialogDescription>
               </DialogHeader>
               <form action={deleteAccount} className="flex flex-col gap-4">
