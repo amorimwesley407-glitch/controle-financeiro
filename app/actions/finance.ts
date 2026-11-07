@@ -142,6 +142,32 @@ export async function updateTransaction(id: number, form: FormData) {
   revalidatePath('/')
 }
 export async function deleteTransaction(id: number) { const userId = await getUserId(); const safeId = z.number().int().positive().parse(id); const existing=await db.select().from(transactions).where(and(eq(transactions.id,safeId),eq(transactions.userId,userId))).limit(1); if(!existing[0])throw new Error('Transação não encontrada'); await db.delete(transactions).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId))); await removeTransactionImage(existing[0].imagePath,userId); revalidatePath('/') }
+/**
+ * Divide um lançamento entre categorias: o original fica com a primeira parte e cada outra parte vira um lançamento
+ * igual (descrição, data, conta, observações), só com o próprio valor e categoria. A soma das partes é o valor original.
+ */
+export async function splitTransaction(id: number, parts: { categoryId: number | null; amountCents: number }[]) {
+  const userId = await getUserId()
+  const safeId = z.number().int().positive().parse(id)
+  const safeParts = z.array(z.object({ categoryId: z.number().int().positive().nullable(), amountCents: z.number().int().safe().positive() })).min(2, 'Divida em pelo menos duas partes').max(10, 'Divida em no máximo dez partes').parse(parts)
+  const [original] = await db.select().from(transactions).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId))).limit(1)
+  if (!original) throw new Error('Transação não encontrada')
+  if (original.installmentGroup) throw new Error('Parcelas não podem ser divididas')
+  if (safeParts.reduce((sum, part) => sum + part.amountCents, 0) !== original.amountCents) throw new Error('As partes precisam somar o valor do lançamento')
+  const categoryIds = [...new Set(safeParts.map(part => part.categoryId).filter((categoryId): categoryId is number => categoryId !== null))]
+  if (categoryIds.length) {
+    const owned = await db.select({ id: categories.id }).from(categories).where(and(eq(categories.userId, userId), eq(categories.type, original.type), inArray(categories.id, categoryIds)))
+    if (owned.length !== categoryIds.length) throw new Error('Categoria inválida para este lançamento')
+  }
+  const [first, ...rest] = safeParts
+  // A imagem fica só no original, para não apagar o arquivo de outro lançamento ao excluir uma das partes.
+  const { description, type, date: day, notes, accountId, recurring, billStatus } = original
+  await db.transaction(async tx => {
+    await tx.update(transactions).set({ amountCents: first.amountCents, categoryId: first.categoryId }).where(and(eq(transactions.id, safeId), eq(transactions.userId, userId)))
+    await tx.insert(transactions).values(rest.map(part => ({ userId, description, type, date: day, notes, accountId, recurring, billStatus, amountCents: part.amountCents, categoryId: part.categoryId })))
+  })
+  revalidatePath('/')
+}
 /** Marca uma conta a pagar como paga, ou volta para pendente. */
 export async function setBillPaid(id: number, paid: boolean) {
   const userId = await getUserId()

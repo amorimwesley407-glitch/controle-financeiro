@@ -2,8 +2,8 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import Image from "next/image";
-import { Download, Pencil, ReceiptText, Search, Settings2, Trash2, Upload, WalletCards } from "lucide-react";
-import { deleteInstallments, deleteTransaction, importTransactions, updateTransaction } from "@/app/actions/finance";
+import { Download, Pencil, Plus, ReceiptText, Search, Settings2, Split, Trash2, Upload, WalletCards } from "lucide-react";
+import { deleteInstallments, deleteTransaction, importTransactions, splitTransaction, updateTransaction } from "@/app/actions/finance";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -307,7 +307,153 @@ export function EditTransactionDialog({
           <Button type="submit" disabled={pending}>
             {pending ? "Salvando…" : "Salvar alterações"}
           </Button>
+          {!isInstallment && <SplitTransactionDialog transaction={transaction} categories={categories} asButton onDone={() => setOpen(false)} />}
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type SplitPart = { key: number; categoryId: string; amount: string };
+
+function CategorySelect({ value, onChange, options, label }: { value: string; onChange: (value: string) => void; options: Category[]; label: string }) {
+  return (
+    <Select value={value} onValueChange={(next) => onChange(String(next))}>
+      <SelectTrigger className="w-full min-w-0" aria-label={label}>
+        <SelectValue>{(selected: string) => options.find((category) => String(category.id) === selected)?.name ?? "Sem categoria"}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          <SelectItem value="none">Sem categoria</SelectItem>
+          {options.map((category) => (
+            <SelectItem key={category.id} value={String(category.id)}>{category.name}</SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
+/**
+ * Divide um lançamento entre categorias, como um mercado com comida e limpeza.
+ * Você informa as outras partes; a primeira fica com o que sobra, então a soma sempre fecha.
+ */
+export function SplitTransactionDialog({ transaction, categories, asButton = false, onDone }: {
+  transaction: Tx;
+  categories: Category[];
+  /** No celular a linha não tem espaço para mais um ícone: o botão fica dentro da janela de edição. */
+  asButton?: boolean;
+  onDone?: () => void;
+}) {
+  const options = categories.filter((category) => category.type === transaction.type);
+  const initialCategory = options.some((category) => category.id === transaction.categoryId) ? String(transaction.categoryId) : "none";
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const [firstCategory, setFirstCategory] = useState(initialCategory);
+  const [others, setOthers] = useState<SplitPart[]>([{ key: 1, categoryId: "none", amount: "" }]);
+  const toCents = (amount: string) => Math.round((Number(amount.replace(",", ".")) || 0) * 100);
+  const othersCents = others.reduce((sum, part) => sum + toCents(part.amount), 0);
+  const firstCents = transaction.amountCents - othersCents;
+  const valid = firstCents > 0 && others.every((part) => toCents(part.amount) > 0);
+  function changeOpen(next: boolean) {
+    if (next) {
+      setFirstCategory(initialCategory);
+      setOthers([{ key: 1, categoryId: "none", amount: "" }]);
+    }
+    setOpen(next);
+  }
+  function update(key: number, change: Partial<SplitPart>) {
+    setOthers((parts) => parts.map((part) => (part.key === key ? { ...part, ...change } : part)));
+  }
+  function submit() {
+    const categoryOf = (value: string) => (value === "none" ? null : Number(value));
+    startTransition(async () => {
+      try {
+        await splitTransaction(transaction.id, [
+          { categoryId: categoryOf(firstCategory), amountCents: firstCents },
+          ...others.map((part) => ({ categoryId: categoryOf(part.categoryId), amountCents: toCents(part.amount) })),
+        ]);
+        setOpen(false);
+        onDone?.();
+        toast.success(`Lançamento dividido em ${others.length + 1} partes.`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Não foi possível dividir o lançamento.");
+      }
+    });
+  }
+  return (
+    <Dialog open={open} onOpenChange={changeOpen}>
+      {asButton ? (
+        <DialogTrigger render={<Button type="button" variant="outline" className="w-full sm:hidden" />}>
+          <Split data-icon="inline-start" />
+          Dividir entre categorias
+        </DialogTrigger>
+      ) : (
+        <DialogTrigger render={<Button variant="ghost" size="icon-sm" className="hidden sm:inline-flex" aria-label={`Dividir ${transaction.description}`} title="Dividir entre categorias" />}>
+          <Split />
+        </DialogTrigger>
+      )}
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Dividir entre categorias</DialogTitle>
+          <DialogDescription>
+            “{transaction.description}”, {brl(transaction.amountCents)} em {new Date(`${transaction.date}T12:00:00`).toLocaleDateString("pt-BR")}. Cada parte vira um lançamento com a própria categoria.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_7rem_2rem] items-center gap-2">
+            <CategorySelect value={firstCategory} onChange={setFirstCategory} options={options} label="Categoria da parte 1" />
+            <p className={`rounded-lg border px-2.5 py-1.5 text-right font-mono text-sm ${firstCents > 0 ? "" : "border-destructive text-destructive"}`} aria-label="Valor da parte 1">
+              {brl(Math.max(firstCents, 0))}
+            </p>
+            <span />
+          </div>
+          {others.map((part, index) => (
+            <div key={part.key} className="grid grid-cols-[minmax(0,1fr)_7rem_2rem] items-center gap-2">
+              <CategorySelect value={part.categoryId} onChange={(categoryId) => update(part.key, { categoryId })} options={options} label={`Categoria da parte ${index + 2}`} />
+              <Input
+                type="number"
+                min="0.01"
+                step="0.01"
+                inputMode="decimal"
+                placeholder="0,00"
+                aria-label={`Valor da parte ${index + 2}`}
+                value={part.amount}
+                onChange={(event) => update(part.key, { amount: event.target.value })}
+                className="text-right font-mono"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Remover parte ${index + 2}`}
+                disabled={others.length === 1}
+                onClick={() => setOthers((parts) => parts.filter((item) => item.key !== part.key))}
+              >
+                <Trash2 />
+              </Button>
+            </div>
+          ))}
+          <p className={`text-xs ${firstCents > 0 ? "text-muted-foreground" : "text-destructive"}`}>
+            {firstCents > 0
+              ? "A primeira parte fica com o que sobra do valor total."
+              : `As outras partes passam do total em ${brl(-firstCents)}.`}
+          </p>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={others.length >= 9}
+              onClick={() => setOthers((parts) => [...parts, { key: Math.max(...parts.map((item) => item.key)) + 1, categoryId: "none", amount: "" }])}
+            >
+              <Plus data-icon="inline-start" />
+              Adicionar parte
+            </Button>
+            <Button type="button" onClick={submit} disabled={!valid || pending}>
+              {pending ? "Dividindo…" : `Dividir em ${others.length + 1} partes`}
+            </Button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -782,6 +928,7 @@ export function TransactionTable({
                         categories={categories}
                         accounts={accounts}
                       />
+                      {!t.installmentGroup && <SplitTransactionDialog transaction={t} categories={categories} />}
                       <Button
                         variant="ghost"
                         size="icon-sm"
