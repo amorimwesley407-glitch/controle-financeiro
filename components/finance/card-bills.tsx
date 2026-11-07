@@ -57,7 +57,7 @@ function CardBill({ card, accounts, transactions, transfers, currentDate }: {
       {card.creditLimitCents ? (
         <CardLimitBar usedCents={getCardLimitUsed(card, transactions, transfers, currentDate)} limitCents={card.creditLimitCents} />
       ) : null}
-      {invoice && invoice.remainingCents > 0 && accounts.length >= 2 && (
+      {invoice && invoice.remainingCents > 0 && (
         <div className="mt-auto flex justify-end">
           <TransferDialog
             accounts={accounts}
@@ -109,7 +109,7 @@ export function CardBillsCard({ cards, accounts, transactions, transfers, curren
           </Select>
         </label>
       </CardHeader>
-      <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <CardContent className="grid gap-3 sm:grid-cols-2">
         {cards.map((card) => (
           <CardBill key={card.id} card={card} accounts={accounts} transactions={transactions} transfers={transfers} currentDate={currentDate} />
         ))}

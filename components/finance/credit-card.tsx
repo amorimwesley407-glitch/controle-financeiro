@@ -56,9 +56,10 @@ export function CardLimitBar({ usedCents, limitCents, className }: { usedCents: 
   const over = usedCents > limitCents;
   return (
     <div className={`flex flex-col gap-1.5 text-xs ${className ?? ""}`}>
-      <div className="flex justify-between gap-2">
-        <span className="text-muted-foreground">Limite usado</span>
-        <span className="font-mono">
+      {/* Em cards estreitos, o valor desce inteiro para a linha de baixo em vez de quebrar no meio. */}
+      <div className="flex flex-wrap justify-between gap-x-2 gap-y-0.5">
+        <span className="whitespace-nowrap text-muted-foreground">Limite usado</span>
+        <span className="whitespace-nowrap font-mono">
           {brl(usedCents)} de {brl(limitCents)}
         </span>
       </div>
