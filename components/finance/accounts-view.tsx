@@ -220,6 +220,9 @@ export function TransferDialog({ accounts, currentDate, toAccountId, amountCents
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  // Fatura se paga com dinheiro de uma conta, não com outro cartão. A primeira conta já vem escolhida.
+  const paysCard = accounts.some((account) => account.id === toAccountId && account.kind === "credit_card");
+  const fromAccounts = accounts.filter((account) => account.id !== toAccountId && !(paysCard && account.kind === "credit_card"));
   function submit(form: FormData) {
     startTransition(async () => {
       try {
@@ -242,24 +245,32 @@ export function TransferDialog({ accounts, currentDate, toAccountId, amountCents
           <DialogTitle>{label}</DialogTitle>
           <DialogDescription>Move dinheiro entre contas. Não conta como receita nem como despesa.</DialogDescription>
         </DialogHeader>
-        <form action={submit} className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-4">
-            <AccountSelect name="fromAccountId" label="De" accounts={accounts.filter((account) => account.id !== toAccountId)} />
-            <AccountSelect name="toAccountId" label="Para" accounts={accounts} defaultValue={toAccountId ? String(toAccountId) : undefined} />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Valor">
-              <Input name="amount" type="number" min="0.01" step="0.01" defaultValue={amountCents ? (amountCents / 100).toFixed(2) : undefined} required />
+        {fromAccounts.length === 0 ? (
+          <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+            {paysCard
+              ? "Para pagar a fatura, cadastre primeiro a conta de onde sai o dinheiro, como a sua conta corrente. Em Contas e cartões, use Nova conta e escolha o tipo Conta corrente."
+              : "Cadastre outra conta para poder transferir entre elas."}
+          </p>
+        ) : (
+          <form action={submit} className="flex flex-col gap-4">
+            <div className="grid grid-cols-2 gap-4">
+              <AccountSelect name="fromAccountId" label="De" accounts={fromAccounts} defaultValue={paysCard ? String(fromAccounts[0].id) : undefined} />
+              <AccountSelect name="toAccountId" label="Para" accounts={accounts} defaultValue={toAccountId ? String(toAccountId) : undefined} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Valor">
+                <Input name="amount" type="number" min="0.01" step="0.01" defaultValue={amountCents ? (amountCents / 100).toFixed(2) : undefined} required />
+              </Field>
+              <Field label="Data">
+                <Input name="date" type="date" defaultValue={currentDate} required />
+              </Field>
+            </div>
+            <Field label="Descrição (opcional)">
+              <Input name="description" defaultValue={description} maxLength={80} />
             </Field>
-            <Field label="Data">
-              <Input name="date" type="date" defaultValue={currentDate} required />
-            </Field>
-          </div>
-          <Field label="Descrição (opcional)">
-            <Input name="description" defaultValue={description} maxLength={80} />
-          </Field>
-          <Button type="submit" disabled={pending}>{pending ? "Salvando…" : "Salvar"}</Button>
-        </form>
+            <Button type="submit" disabled={pending}>{pending ? "Salvando…" : "Salvar"}</Button>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   );

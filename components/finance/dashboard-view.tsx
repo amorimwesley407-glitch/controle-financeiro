@@ -55,6 +55,150 @@ export function DashboardView({
   const money = (cents: number) => (balanceHidden ? HIDDEN_VALUE : brl(cents));
   const ranked = [...byCategory].sort((a, b) => b.value - a.value);
   const categoryTotal = ranked.reduce((sum, item) => sum + item.value, 0);
+  const cashFlowCard = (
+    <Card className={children ? undefined : "xl:col-span-2"}>
+      <CardHeader className="flex-row items-start justify-between">
+        <div>
+          <CardTitle>Evolução do caixa</CardTitle>
+          <CardDescription>
+            Receitas e despesas nos últimos seis meses
+          </CardDescription>
+        </div>
+        <Badge variant="secondary">6 meses</Badge>
+      </CardHeader>
+      <CardContent>
+        <ChartContainer config={chartConfig} className="h-80 w-full">
+          <AreaChart data={flow}>
+            <defs>
+              <linearGradient
+                id="incomeGradient"
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop
+                  offset="5%"
+                  stopColor="var(--color-receitas)"
+                  stopOpacity={0.3}
+                />
+                <stop
+                  offset="95%"
+                  stopColor="var(--color-receitas)"
+                  stopOpacity={0}
+                />
+              </linearGradient>
+              <linearGradient
+                id="expenseGradient"
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop
+                  offset="5%"
+                  stopColor="var(--color-despesas)"
+                  stopOpacity={0.2}
+                />
+                <stop
+                  offset="95%"
+                  stopColor="var(--color-despesas)"
+                  stopOpacity={0}
+                />
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} />
+            <XAxis dataKey="month" />
+            <YAxis hide />
+            {!isAllMoneyHidden() && <ChartTooltip content={<ChartTooltipContent />} />}
+            <Area
+              dataKey="receitas"
+              type="monotone"
+              stroke="var(--color-receitas)"
+              strokeWidth={2}
+              fill="url(#incomeGradient)"
+            />
+            <Area
+              dataKey="despesas"
+              type="monotone"
+              stroke="var(--color-despesas)"
+              strokeWidth={2}
+              fill="url(#expenseGradient)"
+            />
+          </AreaChart>
+        </ChartContainer>
+      </CardContent>
+    </Card>
+  );
+  const spendingCard = (
+    <Card>
+      <CardHeader>
+        <CardTitle>Onde você mais gasta</CardTitle>
+        <CardDescription>Participação por categoria</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {ranked.length ? (
+          <>
+            <ChartContainer config={chartConfig} className="h-44">
+              <PieChart>
+                <Pie
+                  data={ranked}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius={48}
+                  outerRadius={72}
+                  paddingAngle={3}
+                />
+                <ChartTooltip
+                  cursor={false}
+                  offset={24}
+                  content={
+                    <ChartTooltipContent
+                      hideLabel
+                      hideIndicator
+                      className="min-w-48"
+                      formatter={(value, name, item) => (
+                        <div className="flex w-full items-center justify-between gap-5">
+                          <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                            <span className="size-2.5 shrink-0 rounded-sm" style={{ backgroundColor: item.payload?.fill }} />
+                            <span className="truncate">{String(name)}</span>
+                          </span>
+                          <span className="shrink-0 font-mono font-semibold tabular-nums text-foreground">
+                            {brl(Math.round(Number(value) * 100))}
+                          </span>
+                        </div>
+                      )}
+                    />
+                  }
+                />
+              </PieChart>
+            </ChartContainer>
+            <div className="mt-2 flex flex-col gap-3">
+              {ranked.slice(0, 3).map((item) => (
+                <div
+                  key={item.name}
+                  className="flex items-center justify-between gap-3 text-sm"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      className="size-2.5 rounded-full"
+                      style={{ background: item.fill }}
+                    />
+                    <span className="truncate">{item.name}</span>
+                  </div>
+                  <span className="font-mono text-xs font-medium">
+                    {Math.round((item.value / categoryTotal) * 100)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <Empty text="Categorize despesas para visualizar seus gastos." />
+        )}
+      </CardContent>
+    </Card>
+  );
   return (
     <div className="flex flex-col gap-6">
       <section className="grid gap-4 xl:grid-cols-3">
@@ -177,149 +321,21 @@ export function DashboardView({
           icon={Target}
         />
       </section>
-      {children}
-      <section className="grid gap-6 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
-          <CardHeader className="flex-row items-start justify-between">
-            <div>
-              <CardTitle>Evolução do caixa</CardTitle>
-              <CardDescription>
-                Receitas e despesas nos últimos seis meses
-              </CardDescription>
-            </div>
-            <Badge variant="secondary">6 meses</Badge>
-          </CardHeader>
-          <CardContent>
-            <ChartContainer config={chartConfig} className="h-80 w-full">
-              <AreaChart data={flow}>
-                <defs>
-                  <linearGradient
-                    id="incomeGradient"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop
-                      offset="5%"
-                      stopColor="var(--color-receitas)"
-                      stopOpacity={0.3}
-                    />
-                    <stop
-                      offset="95%"
-                      stopColor="var(--color-receitas)"
-                      stopOpacity={0}
-                    />
-                  </linearGradient>
-                  <linearGradient
-                    id="expenseGradient"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop
-                      offset="5%"
-                      stopColor="var(--color-despesas)"
-                      stopOpacity={0.2}
-                    />
-                    <stop
-                      offset="95%"
-                      stopColor="var(--color-despesas)"
-                      stopOpacity={0}
-                    />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="month" />
-                <YAxis hide />
-                {!isAllMoneyHidden() && <ChartTooltip content={<ChartTooltipContent />} />}
-                <Area
-                  dataKey="receitas"
-                  type="monotone"
-                  stroke="var(--color-receitas)"
-                  strokeWidth={2}
-                  fill="url(#incomeGradient)"
-                />
-                <Area
-                  dataKey="despesas"
-                  type="monotone"
-                  stroke="var(--color-despesas)"
-                  strokeWidth={2}
-                  fill="url(#expenseGradient)"
-                />
-              </AreaChart>
-            </ChartContainer>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Onde você mais gasta</CardTitle>
-            <CardDescription>Participação por categoria</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {ranked.length ? (
-              <>
-                <ChartContainer config={chartConfig} className="h-44">
-                  <PieChart>
-                    <Pie
-                      data={ranked}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius={48}
-                      outerRadius={72}
-                      paddingAngle={3}
-                    />
-                    <ChartTooltip
-                      cursor={false}
-                      offset={24}
-                      content={
-                        <ChartTooltipContent
-                          hideLabel
-                          hideIndicator
-                          className="min-w-48"
-                          formatter={(value, name, item) => (
-                            <div className="flex w-full items-center justify-between gap-5">
-                              <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
-                                <span className="size-2.5 shrink-0 rounded-sm" style={{ backgroundColor: item.payload?.fill }} />
-                                <span className="truncate">{String(name)}</span>
-                              </span>
-                              <span className="shrink-0 font-mono font-semibold tabular-nums text-foreground">
-                                {brl(Math.round(Number(value) * 100))}
-                              </span>
-                            </div>
-                          )}
-                        />
-                      }
-                    />
-                  </PieChart>
-                </ChartContainer>
-                <div className="mt-2 flex flex-col gap-3">
-                  {ranked.slice(0, 3).map((item) => (
-                    <div
-                      key={item.name}
-                      className="flex items-center justify-between gap-3 text-sm"
-                    >
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span
-                          className="size-2.5 rounded-full"
-                          style={{ background: item.fill }}
-                        />
-                        <span className="truncate">{item.name}</span>
-                      </div>
-                      <span className="font-mono text-xs font-medium">
-                        {Math.round((item.value / categoryTotal) * 100)}%
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <Empty text="Categorize despesas para visualizar seus gastos." />
-            )}
-          </CardContent>
-        </Card>
-      </section>
+      {children ? (
+        // Com cartões, as faturas ficam ao lado de "Onde você mais gasta" e a evolução do caixa ocupa a linha de baixo.
+        <>
+          <section className="grid gap-6 xl:grid-cols-3">
+            <div className="flex flex-col xl:col-span-2 *:flex-1">{children}</div>
+            {spendingCard}
+          </section>
+          {cashFlowCard}
+        </>
+      ) : (
+        <section className="grid gap-6 xl:grid-cols-3">
+          {cashFlowCard}
+          {spendingCard}
+        </section>
+      )}
     </div>
   );
 }
