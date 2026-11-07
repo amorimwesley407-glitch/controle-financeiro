@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Field } from "@/components/finance/shared";
+import { TwoFactorSettings } from "@/components/two-factor-settings";
 
 export function SettingsView({
   user,
@@ -23,7 +24,7 @@ export function SettingsView({
   goalCount,
   investmentCount,
 }: {
-  user: { name: string; email: string; image: string | null };
+  user: { name: string; email: string; image: string | null; twoFactorEnabled: boolean };
   onNameChange: (name: string) => void;
   onImageChange: (image: string | null) => void;
   transactionCount: number;
@@ -264,6 +265,7 @@ export function SettingsView({
             </form>
           </CardContent>
         </Card>
+        <TwoFactorSettings enabled={user.twoFactorEnabled} />
       </div>
       </div>
       <Card className="border-rose-500/25 bg-rose-500/[.025]">

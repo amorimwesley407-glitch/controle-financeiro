@@ -7,7 +7,7 @@ const timestamps = {
 
 export const user = pgTable('user', {
   id: text('id').primaryKey(), name: text('name').notNull(), email: text('email').notNull().unique(),
-  emailVerified: boolean('emailVerified').notNull().default(false), image: text('image'), ...timestamps,
+  emailVerified: boolean('emailVerified').notNull().default(false), image: text('image'), twoFactorEnabled: boolean('twoFactorEnabled').default(false), ...timestamps,
 })
 export const session = pgTable('session', {
   id: text('id').primaryKey(), expiresAt: timestamp('expiresAt', { withTimezone: true }).notNull(), token: text('token').notNull().unique(),
@@ -21,6 +21,11 @@ export const account = pgTable('account', {
 export const verification = pgTable('verification', {
   id: text('id').primaryKey(), identifier: text('identifier').notNull(), value: text('value').notNull(), expiresAt: timestamp('expiresAt', { withTimezone: true }).notNull(), ...timestamps,
 })
+/** Segredo do app autenticador e códigos de recuperação, guardados pelo plugin twoFactor do Better Auth. */
+export const twoFactor = pgTable('twoFactor', {
+  id: text('id').primaryKey(), secret: text('secret').notNull(), backupCodes: text('backupCodes').notNull(), userId: text('userId').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  verified: boolean('verified').default(true), failedVerificationCount: integer('failedVerificationCount').default(0), lockedUntil: timestamp('lockedUntil', { withTimezone: true }),
+}, t => [index('twoFactor_userId_idx').on(t.userId)])
 export const rateLimit = pgTable('rateLimit', {
   id: text('id').primaryKey(), key: text('key').notNull().unique(), count: integer('count').notNull(), lastRequest: bigint('lastRequest', { mode: 'number' }).notNull(),
 })
