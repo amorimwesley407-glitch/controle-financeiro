@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
-export type MarketQuote = { symbol: string; name: string; value: number; change: number; kind: string }
+/** `stale`: a fonte falhou e o valor é o último que deu certo. */
+export type MarketQuote = { symbol: string; name: string; value: number; change: number; kind: string; stale?: boolean }
 export type StockQuote = { symbol: string; name: string; logoUrl: string; price: number; change: number; updatedAt: string | null }
 export type MarketData = { quotes: MarketQuote[]; stockQuotes: StockQuote[] }
 
@@ -25,29 +26,41 @@ const request = (url: string, revalidate: number, headers: HeadersInit = {}) =>
     return response.json()
   })
 
-const currencyFallback: MarketQuote[] = [
-  { symbol: 'USD', name: 'Dólar comercial', value: 5.47, change: 0.18, kind: 'currency' },
-  { symbol: 'BTC', name: 'Bitcoin', value: 675420, change: 1.24, kind: 'crypto' },
-  { symbol: 'EUR', name: 'Euro', value: 6.38, change: -0.11, kind: 'currency' },
-]
-const fxSchema = z.object({
-  USDBRL: z.object({ bid: z.coerce.number().finite().positive(), pctChange: z.coerce.number().finite() }),
-  EURBRL: z.object({ bid: z.coerce.number().finite().positive(), pctChange: z.coerce.number().finite() }),
-})
+const awesomeSchema = z.record(z.string(), z.object({ bid: z.coerce.number().finite().positive(), pctChange: z.coerce.number().finite() }))
 const btcSchema = z.object({ bitcoin: z.object({ brl: z.number().finite().positive(), brl_24h_change: z.number().finite() }) })
+const currencies = [
+  { symbol: 'USD', name: 'Dólar comercial', key: 'USDBRL', kind: 'currency' },
+  { symbol: 'BTC', name: 'Bitcoin', key: 'BTCBRL', kind: 'crypto' },
+  { symbol: 'EUR', name: 'Euro', key: 'EURBRL', kind: 'currency' },
+] as const
 
-function getCurrencyQuotes() {
-  return withLastGood('currencies', async () => {
-    const [fx, btc] = await Promise.all([
-      request('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL', 900).then(data => fxSchema.parse(data)),
-      request('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=brl&include_24hr_change=true', 300).then(data => btcSchema.parse(data)),
-    ])
-    return [
-      { symbol: 'USD', name: 'Dólar comercial', value: fx.USDBRL.bid, change: fx.USDBRL.pctChange, kind: 'currency' },
-      { symbol: 'BTC', name: 'Bitcoin', value: btc.bitcoin.brl, change: btc.bitcoin.brl_24h_change, kind: 'crypto' },
-      { symbol: 'EUR', name: 'Euro', value: fx.EURBRL.bid, change: fx.EURBRL.pctChange, kind: 'currency' },
-    ]
-  }, currencyFallback)
+/** Bitcoin pela CoinGecko: só reserva, porque o plano gratuito costuma recusar pedidos de servidores na nuvem. */
+const coingeckoBitcoin = () =>
+  request('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=brl&include_24hr_change=true', 300)
+    .then(data => btcSchema.parse(data))
+    .then(data => ({ value: data.bitcoin.brl, change: data.bitcoin.brl_24h_change }))
+
+/**
+ * Dólar, euro e bitcoin numa busca só na AwesomeAPI. Cada moeda é independente: a que falhar usa o último valor bom,
+ * marcado como desatualizado, e some se nunca houve um. Nada de valor inventado na tela.
+ */
+async function getCurrencyQuotes() {
+  const awesome = await request('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL', 300)
+    .then(data => awesomeSchema.parse(data))
+    .catch(() => ({} as z.infer<typeof awesomeSchema>))
+  const quotes = await Promise.all(currencies.map(async ({ key, ...currency }) => {
+    const live = awesome[key]
+    const fresh = live ? { value: live.bid, change: live.pctChange } : currency.symbol === 'BTC' ? await coingeckoBitcoin().catch(() => null) : null
+    const cacheKey = `quote:${currency.symbol}`
+    if (fresh) {
+      const quote: MarketQuote = { ...currency, ...fresh }
+      lastGood.set(cacheKey, quote)
+      return quote
+    }
+    const previous = lastGood.get(cacheKey) as MarketQuote | undefined
+    return previous ? { ...previous, stale: true } : null
+  }))
+  return quotes.filter((quote): quote is MarketQuote => quote !== null)
 }
 
 const quoteSchema = z.object({
