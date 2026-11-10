@@ -576,6 +576,7 @@ export function Quotes({ quotes }: { quotes: Quote[] }) {
         {quotes.map((q) => (
           <MarketMetricRow key={q.symbol} quote={q} />
         ))}
+        {!quotes.length && <Empty text="Cotações indisponíveis no momento. Tente de novo em alguns minutos." />}
       </CardContent>
     </Card>
   );
@@ -601,7 +602,10 @@ export function MarketMetricRow({ quote: q }: { quote: Quote }) {
           </span>
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{q.name}</p>
-            <p className="truncate text-xs text-muted-foreground">{neutral ? "Banco Central do Brasil" : q.symbol}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {neutral ? "Banco Central do Brasil" : q.symbol}
+              {q.stale && <span className="text-amber-600 dark:text-amber-400"> · desatualizada</span>}
+            </p>
           </div>
         </div>
         <div className="shrink-0 text-right transition-transform duration-300 group-hover/market:-translate-y-0.5">

@@ -90,6 +90,8 @@ export type Quote = {
   value: number;
   change: number;
   kind: string;
+  /** A fonte falhou e este é o último valor que deu certo. */
+  stale?: boolean;
 };
 
 export type StockQuote = {

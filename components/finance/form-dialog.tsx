@@ -572,7 +572,7 @@ export function FormDialog({
                   <div className="rounded-xl border bg-muted/30 p-4">
                     {holdingSymbol && !cryptoQuote ? (
                       <p className="text-sm text-amber-400">
-                        Cotação de {holdingSymbol} indisponível. Selecione BTC para calcular automaticamente.
+                        Cotação de {holdingSymbol} indisponível agora. Tente de novo em alguns minutos.
                       </p>
                     ) : cryptoQuantity > 0 ? (
                       <div className="grid gap-3 sm:grid-cols-2">
@@ -592,6 +592,7 @@ export function FormDialog({
                         )}
                         <p className="text-xs text-muted-foreground sm:col-span-2">
                           Cotação usada: {brl(Math.round((cryptoQuote?.value ?? 0) * 100))} por {holdingSymbol}.
+                          {cryptoQuote?.stale && " Atenção: a fonte não respondeu agora e este é o último valor conhecido."}
                         </p>
                       </div>
                     ) : (
