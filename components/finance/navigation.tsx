@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getBudgetAlerts, getPendingBills } from "@/lib/finance";
 import { getCardDueAlerts } from "@/lib/accounts";
 import { BillPaidButton } from "@/components/finance/bills-card";
@@ -29,6 +29,22 @@ export function NotificationMenu({
   currentDate: string;
 }) {
   const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!wrapperRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
   const dueAlerts = getCardDueAlerts(cards, transactions, transfers, currentDate);
   const billAlerts = getPendingBills(transactions, currentDate, 3);
   const alerts = getBudgetAlerts(
@@ -58,7 +74,7 @@ export function NotificationMenu({
     .slice(0, 5);
   const notificationCount = dueAlerts.length + billAlerts.length + alerts.length + highExpenses.length;
   return (
-    <div className="relative z-50">
+    <div ref={wrapperRef} className="static sm:relative">
       <Button
         type="button"
         variant="ghost"
@@ -75,13 +91,7 @@ export function NotificationMenu({
       </Button>
       {open && (
         <>
-          <button
-            type="button"
-            aria-label="Fechar notificações"
-            className="fixed inset-0 z-40 cursor-default"
-            onClick={() => setOpen(false)}
-          />
-          <div className="absolute right-0 top-11 z-50 w-[min(22rem,calc(100vw-2rem))] rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl">
+          <div className="absolute inset-x-4 top-[4.25rem] z-50 rounded-xl sm:inset-x-auto sm:right-0 sm:top-11 sm:w-88 border bg-popover p-2 text-popover-foreground shadow-xl">
             <div className="flex items-center justify-between px-2 py-2">
               <div>
                 <p className="text-sm font-semibold">Notificações</p>
@@ -91,7 +101,7 @@ export function NotificationMenu({
             </div>
             <Separator className="my-1" />
             {notificationCount ? (
-              <AnimatedList className="max-h-80 overflow-y-auto">
+              <AnimatedList className="max-h-[60vh] overflow-y-auto sm:max-h-80">
                 {dueAlerts.map((alert) => (
                   <div key={`due-${alert.card.id}-${alert.dueDate}`} className="flex gap-3 rounded-lg p-2.5 hover:bg-muted/60">
                     <span className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${alert.daysLeft < 0 ? "bg-rose-500/10 text-rose-400" : "bg-amber-500/10 text-amber-400"}`}>
